@@ -1,0 +1,8 @@
+{
+  "msvc": "14.51.36231",
+  "windows_sdk": "10.0.26100.0",
+  "architecture": "x64",
+  "source_sha256": "9dacdabfd5fc0414570f42b75fd1d8179e98e734899947e18cd33ffe5860f59d",
+  "recipe_sha256": "c8360ca0f9f773434d46bba488c98582cf43bde4f7838b8b991b24f12429e66e",
+  "dll_sha256": "d998a70bed15cb1b2d62650e7c077b3a40151264a93282b19373438db2137235"
+}

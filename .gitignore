@@ -1,0 +1,39 @@
+# Unity generated
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+[Mm]emory[Cc]aptures/
+UserSettings/
+dist/
+TestResults/
+__pycache__/
+
+# Local client configuration can contain credentials
+.mcp.json
+.vscode/mcp.json
+.claude/settings.local.json
+
+# Unity internal asset caches
+*.pidb.meta
+*.pdb.meta
+*.mdb.meta
+
+# Rider/VS
+.idea/
+*.sln
+*.csproj
+
+# Plan executor state
+.plan-executor/
+
+# OS
+.DS_Store
+Thumbs.db
+.itasks/*/run/
+
+# Ignored by Unity when consuming the repository root
+dist~/
+TestResults~/

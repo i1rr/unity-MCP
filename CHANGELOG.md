@@ -1,0 +1,16 @@
+# Changelog
+
+## [1.0.0]
+
+First public release.
+
+- Inspect and edit Unity scenes, GameObjects, components and assets through MCP.
+- Discover specialist tools and run named Unity tests.
+- Inspect development players and capture Game View images and video.
+- Manage connections, tools and optional integrations in the Dashboard.
+- Create, enable, import and export project-specific tool modules.
+- Keep tools from failed module initializations unavailable instead of treating
+  them as core tools.
+- Enable local AI issue logging with instructions separate from issue data.
+- Use the i1rr Community License: commercial development is allowed; selling or
+  offering the MCP's capabilities for a fee requires written permission.

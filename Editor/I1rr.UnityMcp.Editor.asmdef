@@ -1,0 +1,13 @@
+{
+  "name": "I1rr.UnityMcp.Editor",
+  "rootNamespace": "I1rr.UnityMcp.Editor",
+  "references": ["I1rr.UnityMcp.Shared"],
+  "includePlatforms": ["Editor"],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": true,
+  "precompiledReferences": ["Newtonsoft.Json.dll"],
+  "autoReferenced": false,
+  "defineConstraints": [],
+  "noEngineReferences": false
+}

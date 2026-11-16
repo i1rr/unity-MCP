@@ -1,0 +1,16 @@
+{
+  "name": "I1rr.UnityMcp.Editor.Addressables",
+  "rootNamespace": "I1rr.UnityMcp.Editor.Addressables",
+  "references": ["I1rr.UnityMcp.Shared", "I1rr.UnityMcp.Editor", "Unity.Addressables", "Unity.Addressables.Editor", "Unity.ResourceManager"],
+  "includePlatforms": ["Editor"],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": true,
+  "precompiledReferences": ["Newtonsoft.Json.dll"],
+  "autoReferenced": false,
+  "versionDefines": [
+    { "name": "com.unity.addressables", "expression": "1.0.0", "define": "MCP_ADDRESSABLES" }
+  ],
+  "defineConstraints": ["MCP_ADDRESSABLES"],
+  "noEngineReferences": false
+}

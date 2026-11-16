@@ -1,0 +1,12 @@
+{
+  "name": "I1rr.UnityMcp.Editor.TestRunner",
+  "references": ["I1rr.UnityMcp.Shared", "UnityEditor.TestRunner", "UnityEngine.TestRunner"],
+  "includePlatforms": ["Editor"],
+  "overrideReferences": true,
+  "precompiledReferences": ["Newtonsoft.Json.dll", "nunit.framework.dll"],
+  "autoReferenced": false,
+  "versionDefines": [
+    { "name": "com.unity.test-framework", "expression": "1.6.0", "define": "MCP_TEST_FRAMEWORK" }
+  ],
+  "defineConstraints": ["MCP_TEST_FRAMEWORK"]
+}
