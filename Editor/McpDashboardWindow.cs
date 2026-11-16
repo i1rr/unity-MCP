@@ -1008,7 +1008,7 @@ namespace I1rr.UnityMcp.Editor
                 var newEnableCode = EditorGUILayout.Toggle(
                     new GUIContent("Enable Code Execution",
                         "Allow the execute_code tool to run arbitrary C# in the Editor. " +
-                        "WARNING: Grants full Editor access to MCP clients."),
+                        "Grants the Editor process's permissions to MCP clients. No sandbox or interruptible timeout."),
                     _codeExecutionEnabled);
                 if (newEnableCode != _codeExecutionEnabled)
                 {
@@ -1022,7 +1022,7 @@ namespace I1rr.UnityMcp.Editor
                 if (_codeExecutionEnabled)
                 {
                     EditorGUILayout.HelpBox(
-                        "Code execution is ENABLED. The execute_code tool can run arbitrary C# with full Editor access.",
+                        "Code execution is ENABLED. Trust every connected client: code can access files and network with the Editor's permissions. There is no sandbox, and a timeout cannot stop running code.",
                         MessageType.Warning);
                 }
             }

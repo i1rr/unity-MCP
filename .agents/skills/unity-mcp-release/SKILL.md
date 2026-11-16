@@ -1,6 +1,6 @@
 ---
 name: unity-mcp-release
-description: Prepare, validate, tag and distribute i1rr-unity-mcp releases through npm and GitHub for Unity Package Manager. Use for version bumps, package tarballs and release publication.
+description: Prepare, validate, tag and distribute i1rr-unity-mcp releases through its Unity registry and GitHub. Use for version bumps, package tarballs and release publication.
 ---
 
 # Release i1rr-unity-mcp
@@ -60,13 +60,11 @@ the published file to a fresh directory, verify the hash and install using
 the documented tag. Roll back a consumer by restoring its previous pin. Issue
 a new version for corrected releases.
 
-Publish the tested tag to the public npm registry after the maintainer has
-authenticated locally. Follow [npm publishing](../../../Documentation~/NpmPublishing.md).
-Run `python Tools~/publish_npm.py --revision <tag>` for a dry run; add `--publish`
-only for the tested release, using `--archive <Unity-signed.tgz>`. Create that
-archive with `Tools~/sign_release.py` and the owner's Unity organization; never
+Publish the tested tag through the static Unity registry. Follow
+[registry publishing](../../../Documentation~/RegistryPublishing.md). Create the
+Unity-signed archive with `Tools~/sign_release.py` and the owner's Unity organization; never
 weaken a consumer's security policy. Verify Unity's signature status, the signed
-payload against Git, public metadata, archive hash and a fresh
+payload against Git, public registry metadata, archive hash and a fresh
 Unity registry install. For update verification, start on the previous registry
 version and inspect the real Package Manager update control before upgrading.
 
@@ -75,9 +73,10 @@ Keep Git installation from immutable tags as an alternative. Creating a tarball
 is packaging and verification, not a requirement for Git installation. The native
 Windows DLL is already included; rebuild it only when its source or binary changes.
 
-The supported distribution channels are the public npm registry, a GitHub Git URL
-and a GitHub Release tarball, all consumed by Unity Package Manager. Other registries
-require an explicit destination and package access. Keep any registry credentials
+The supported distribution channels are the GitHub Pages Unity registry, a GitHub Git URL
+and a GitHub Release tarball, all consumed by Unity Package Manager. Public npm
+publishing is retired because Unity dependency IDs collide with unrelated npm packages.
+Other registries require an explicit destination and package access. Keep any registry credentials
 outside Git. Preparing a candidate alone does not publish a tag or change visibility.
 
 [Unity Git dependencies](https://docs.unity3d.com/2022.3/Documentation/Manual/upm-git.html) · [Semantic Versioning](https://semver.org/) · [GitHub release CLI](https://cli.github.com/manual/gh_release_create)

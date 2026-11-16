@@ -357,6 +357,17 @@ Screenshot tools are deferred: call them individually, not inside `batch_execute
 ---
 ## Efficient Patterns
 
+### Code execution and time budgets
+
+`execute_code` is off by default. Only the project owner should opt in; it gives
+every connected client the Editor process's permissions, without a sandbox.
+It runs on the main thread and cannot be interrupted. `timeout_ms` is a reporting
+budget only: `timeout_enforced` is false, and `exceeded_timeout` reports an overrun
+after completion. A successful call remains successful even if it exceeds that
+budget. Never assume that a client timeout stopped a mutation. Batch budgets are
+checked between steps and also cannot interrupt a running tool. Prefer reviewed
+project modules for repeatable work. See [security](../SECURITY.md).
+
 ### Use `batch_execute` for Multi-Step Operations
 
 Instead of making N sequential requests (N round-trips), combine related operations into a single `batch_execute` call:

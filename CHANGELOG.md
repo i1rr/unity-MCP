@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.2]
+
+- Move registry installation to a dedicated Unity registry on GitHub Pages.
+- Keep signed release archives, Unity dependencies and pinned Git installation.
+- Explain npm scanner dependency-name collisions and the one-time registry migration.
+- Correct code and batch timeout descriptions: running tools cannot be interrupted.
+- Report completed code calls that exceeded their time budget without implying cancellation.
+
 ## [1.0.1]
 
 - Add npm publishing and registry installation with Package Manager updates.

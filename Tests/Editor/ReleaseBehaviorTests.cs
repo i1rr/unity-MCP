@@ -16,6 +16,30 @@ namespace I1rr.UnityMcp.Editor.Tests
 {
     public class ReleaseBehaviorTests
     {
+        // Keep the wait in compiled fixture code: Unity's evaluator can see
+        // duplicate framework Thread types when referencing loaded assemblies.
+        public static void WaitPastCodeBudget() => System.Threading.Thread.Sleep(120);
+
+        [Test]
+        public void CodeBudgetOverrunReportsCompletedExecutionWithoutClaimingCancellation()
+        {
+            bool enabled = McpPreferencesProvider.EnableCodeExecution;
+            try
+            {
+                McpPreferencesProvider.EnableCodeExecution = true;
+                var result = UtilityTools.ExecuteCode(new JObject
+                {
+                    ["code"] = "I1rr.UnityMcp.Editor.Tests.ReleaseBehaviorTests.WaitPastCodeBudget();",
+                    ["timeout_ms"] = 100
+                });
+                Assert.That((bool)result["success"], Is.True, result.ToString());
+                Assert.That((bool)result["timeout_enforced"], Is.False);
+                Assert.That((bool)result["exceeded_timeout"], Is.True);
+                Assert.That((long)result["elapsed_ms"], Is.GreaterThanOrEqualTo(100));
+            }
+            finally { McpPreferencesProvider.EnableCodeExecution = enabled; }
+        }
+
         [Test]
         public void NewProjectsUseFocusedDiscoveryAndExplicitFullIsPreserved()
         {

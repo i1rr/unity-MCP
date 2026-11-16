@@ -9,7 +9,7 @@ Requires Unity 2022.3+.
    | Field | Value |
    | --- | --- |
    | Name | i1rr |
-   | URL | `https://registry.npmjs.org` |
+   | URL | `https://i1rr.github.io/unity-MCP` |
    | Scope | `i1rr-unity-mcp` |
 
 2. Open **Window > Package Management > Package Manager**, choose **Install package
@@ -20,12 +20,15 @@ Requires Unity 2022.3+.
 
 Refresh Package Manager to check for new releases, then select the MCP to update.
 
+Already using the npm registry? Change its URL to the one above, keeping the
+exact scope `i1rr-unity-mcp`, then refresh Package Manager. No npm account is needed.
+
 ### Install from Git
 
 With Git installed, choose **Install package from Git URL** in Package Manager:
 
    ```text
-   https://github.com/i1rr/unity-MCP.git#v1.0.1
+   https://github.com/i1rr/unity-MCP.git#v1.0.2
    ```
 
 Git installs stay on their selected release. To use registry updates, remove the
@@ -67,6 +70,11 @@ Read MCP logs and AI-reported issues. Expand either panel or open a backlog entr
 The screenshot shows an example issue from an empty demo project.
 
 ![Activity tab](Documentation~/images/dashboard-activity.png)
+
+## Security
+
+Use Unity Package Manager, not `npm install`. Connect trusted AI clients;
+arbitrary C# execution is off by default. See [security and scanner reports](SECURITY.md).
 
 ## License
 

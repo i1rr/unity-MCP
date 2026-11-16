@@ -110,6 +110,8 @@ def publish(revision, registry, cli, upload, signed_archive=None):
     if (url.scheme != "https" and not (url.scheme == "http" and url.hostname in {"127.0.0.1", "localhost", "::1"})) or url.username or url.password or url.query or url.fragment:
         raise ValueError("Use an HTTPS registry, or HTTP on loopback for an isolated test")
     registry = registry.rstrip("/") + "/"
+    if upload and url.hostname in {"registry.npmjs.org", "registry.npmjs.com"}:
+        raise ValueError("Public npm publishing is retired: Unity dependency IDs collide with unrelated npm packages. Use Documentation~/RegistryPublishing.md. Local registry tests and archive verification remain available.")
     if upload and not signed_archive:
         raise ValueError("Publishing requires --archive <Unity-signed.tgz>; run Tools~/sign_release.py first")
     command = npm_command(cli)

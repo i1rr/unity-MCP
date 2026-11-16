@@ -25,12 +25,12 @@ namespace I1rr.UnityMcp.Editor
         #region execute_code
 
         [McpTool("execute_code",
-            "Compile and execute arbitrary C# code via Mono.CSharp.Evaluator on the main thread. C# 7.3 max. Fresh instance per call. Pre-imports UnityEngine, UnityEditor, System, System.Linq, System.Collections.Generic. No state carries between calls. Unity API calls are fully supported.",
+            "Compile and execute arbitrary C# with the Editor process's permissions. Disabled by default; requires project-owner opt-in. Trusted clients only: this is not sandboxed. Runs synchronously on the main thread and cannot be interrupted, even by timeout_ms. C# 7.3 max. Fresh evaluator per call. Pre-imports UnityEngine, UnityEditor, System, System.Linq, System.Collections.Generic.",
             InputSchemaJson = @"{
                 ""type"": ""object"",
                 ""properties"": {
                     ""code"": { ""type"": ""string"", ""description"": ""C# code to compile and execute."" },
-                    ""timeout_ms"": { ""type"": ""integer"", ""description"": ""Max execution time in milliseconds (default 5000, clamped to [100, 30000])."" , ""default"": 5000 }
+                    ""timeout_ms"": { ""type"": ""integer"", ""description"": ""Reporting budget only; does not stop execution. After completion, exceeded_timeout reports whether elapsed time exceeded this value (default 5000, clamped to [100, 30000])."" , ""default"": 5000 }
                 },
                 ""required"": [""code""]
             }")]
@@ -67,10 +67,12 @@ namespace I1rr.UnityMcp.Editor
 
             try
             {
-                var result = ExecuteWithEvaluator(code, timeoutMs);
+                var result = ExecuteWithEvaluator(code);
                 sw.Stop();
                 result["elapsed_ms"] = sw.ElapsedMilliseconds;
                 result["executed_on_main_thread"] = true;
+                result["timeout_enforced"] = false;
+                result["exceeded_timeout"] = sw.ElapsedMilliseconds > timeoutMs;
                 if (wasClamped)
                     result["timeout_ms_used"] = timeoutMs;
                 return result;
@@ -82,11 +84,13 @@ namespace I1rr.UnityMcp.Editor
                 err["success"] = false;
                 err["elapsed_ms"] = sw.ElapsedMilliseconds;
                 err["executed_on_main_thread"] = true;
+                err["timeout_enforced"] = false;
+                err["exceeded_timeout"] = sw.ElapsedMilliseconds > timeoutMs;
                 return err;
             }
         }
 
-        private static JObject ExecuteWithEvaluator(string code, int timeoutMs)
+        private static JObject ExecuteWithEvaluator(string code)
         {
             // Use reflection to access Mono.CSharp.Evaluator which is available in Unity Editor
             var monoAssembly = FindMonoCSharpAssembly();
@@ -366,7 +370,7 @@ namespace I1rr.UnityMcp.Editor
         private const int WaitMaxMs = 30000;
 
         [McpTool("batch_execute",
-            @"Execute multiple tool calls in one round-trip. All steps execute sequentially on the main thread — parallel execution is architecturally impossible since all Unity APIs require main thread. Max 50 steps per batch. Timeout cap: 55000ms. Returns partial results on timeout. Recursion guard: nested batch calls are rejected.
+            @"Execute multiple tool calls in one round-trip. Steps run sequentially on the main thread. Max 50 steps per batch. The time budget (up to 55000ms) is checked between steps; it cannot interrupt a running tool. Returns partial results when the budget is reached. Nested batch calls are rejected. Each tool retains its own permission checks; batching does not bypass the execute_code opt-in.
 
 Supports 'data_flow' on each step to pipe output from a previous step into this step's parameters (simple key mapping, no expression evaluation). Piped values pass through the target tool's normal parameter validation. Deferred tools cannot be used in batches that use data_flow.
 
