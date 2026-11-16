@@ -40,9 +40,11 @@ python Tools~/sign_release.py --revision v1.0.1 --unity <Unity-executable> --pro
 
 The signer exports committed files into a temporary folder outside Git and calls
 Unity's `Client.Pack` with the organization ID. It requires no password or token
-in its arguments. It opens a disposable graphical Editor and waits for the Unity
-Hub login; personal-account signing is unavailable in batch mode. It checks the signed payload against Git before returning the
-archive. Package consumers can still use the older Editors supported by the MCP.
+in its arguments. It opens a disposable graphical Editor, waits for the Unity
+Hub session and confirms organization membership. This flow uses that session
+instead of passing login credentials through batch mode. It checks the signed
+payload against Git before returning the archive. Package consumers can still
+use the older Editors supported by the MCP.
 
 Check and publish the signed archive:
 
