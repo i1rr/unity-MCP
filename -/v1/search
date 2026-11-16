@@ -1,0 +1,21 @@
+{
+  "objects": [
+    {
+      "package": {
+        "name": "i1rr-unity-mcp",
+        "version": "1.0.1",
+        "description": "Model Context Protocol tools for Unity Editor workflows and development-player inspection.",
+        "keywords": [
+          "Tools",
+          "AI",
+          "MCP"
+        ],
+        "links": {
+          "repository": "https://github.com/i1rr/unity-MCP"
+        }
+      }
+    }
+  ],
+  "total": 1,
+  "time": "2026-11-16T18:37:32+11:00"
+}

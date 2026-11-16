@@ -1,0 +1,67 @@
+{
+  "i1rr-unity-mcp": {
+    "_id": "i1rr-unity-mcp",
+    "name": "i1rr-unity-mcp",
+    "description": "Model Context Protocol tools for Unity Editor workflows and development-player inspection.",
+    "license": "SEE LICENSE IN LICENSE.md",
+    "repository": {
+      "type": "git",
+      "url": "https://github.com/i1rr/unity-MCP.git"
+    },
+    "dist-tags": {
+      "latest": "1.0.1"
+    },
+    "versions": {
+      "1.0.1": {
+        "name": "i1rr-unity-mcp",
+        "version": "1.0.1",
+        "license": "SEE LICENSE IN LICENSE.md",
+        "publishConfig": {
+          "access": "public"
+        },
+        "repository": {
+          "type": "git",
+          "url": "https://github.com/i1rr/unity-MCP.git"
+        },
+        "displayName": "i1rr-unity-mcp",
+        "description": "Model Context Protocol tools for Unity Editor workflows and development-player inspection.",
+        "unity": "2022.3",
+        "unityRelease": "19f1",
+        "dependencies": {
+          "com.unity.modules.animation": "1.0.0",
+          "com.unity.modules.assetbundle": "1.0.0",
+          "com.unity.modules.audio": "1.0.0",
+          "com.unity.modules.imageconversion": "1.0.0",
+          "com.unity.modules.imgui": "1.0.0",
+          "com.unity.modules.jsonserialize": "1.0.0",
+          "com.unity.modules.particlesystem": "1.0.0",
+          "com.unity.modules.physics": "1.0.0",
+          "com.unity.modules.physics2d": "1.0.0",
+          "com.unity.modules.screencapture": "1.0.0",
+          "com.unity.modules.ui": "1.0.0",
+          "com.unity.modules.uielements": "1.0.0",
+          "com.unity.nuget.newtonsoft-json": "3.2.1"
+        },
+        "keywords": [
+          "Tools",
+          "AI",
+          "MCP"
+        ],
+        "author": {
+          "name": "i1rr"
+        },
+        "_id": "i1rr-unity-mcp@1.0.1",
+        "dist": {
+          "tarball": "https://github.com/i1rr/unity-MCP/releases/download/v1.0.1/i1rr-unity-mcp-1.0.1.tgz",
+          "shasum": "b0a106e825846c536a3e98ebb5681d2b772c9838",
+          "integrity": "sha512-whIki26X7dL5CYcaKjg8knss2YaznGPYesFTWhGqLqNh87NNVQeUmQ6zPJZbAW1vBhM8HCKG1ReuQ044/TrPOw=="
+        }
+      }
+    },
+    "time": {
+      "created": "2026-11-16T18:37:32+11:00",
+      "modified": "2026-11-16T18:37:32+11:00",
+      "1.0.1": "2026-11-16T18:37:32+11:00"
+    }
+  }
+}
