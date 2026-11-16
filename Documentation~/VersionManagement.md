@@ -16,6 +16,8 @@ Update package.json, Shared/McpProtocol.cs and CHANGELOG.md together. Run local
 checks, then publish an immutable vX.Y.Z tag on the tested commit. Never move a
 published version or replace its contents; publish a new version for a correction.
 
-Unity can install directly from the Git tag. A tarball is an optional download;
+Publish tested releases to npm for Unity Package Manager version discovery and
+updates. Follow [npm publishing](NpmPublishing.md) for account setup and commands.
+Unity can also install directly from the Git tag. A tarball is an optional download;
 users do not need to compile the included Windows native plugin. See the
 [release workflow](https://github.com/i1rr/unity-MCP/blob/main/.agents/skills/unity-mcp-release/SKILL.md).

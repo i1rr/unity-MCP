@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.0.1]
+
+- Add npm publishing and registry installation with Package Manager updates.
+- Keep Git installation and the existing package ID.
+- Sign registry archives with the publisher's Unity organization.
+
 ## [1.0.0]
 
 First public release.

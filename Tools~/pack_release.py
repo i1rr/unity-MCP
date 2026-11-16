@@ -89,6 +89,7 @@ def build(revision, output):
             raise ValueError(f"Another build already occupies {destination}; choose a fresh output directory")
         temp.replace(destination)
     print(f"{destination}\nGit {commit}\nSHA256 {digest}\n{len(files)} package files")
+    return destination
 
 
 if __name__ == "__main__":

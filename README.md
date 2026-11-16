@@ -2,17 +2,32 @@
 
 ## Install
 
-Requires Unity 2022.3+ and Git.
+Requires Unity 2022.3+.
 
-1. In Unity Package Manager, choose **Install package from Git URL** and paste:
+1. Open **Edit > Project Settings > Package Manager** and add a scoped registry:
+
+   | Field | Value |
+   | --- | --- |
+   | Name | i1rr |
+   | URL | `https://registry.npmjs.org` |
+   | Scope | `i1rr-unity-mcp` |
+
+2. Open **Window > Package Management > Package Manager**, select **My Registries**,
+   then install **i1rr-unity-mcp**. New releases appear in Package Manager.
+3. Open **Tools > i1rr-unity-mcp Dashboard** and connect your AI assistant's HTTP
+   MCP client to the endpoint in **Overview**. A VS Code MCP configuration is also
+   created in your project.
+
+### Install from Git
+
+With Git installed, choose **Install package from Git URL** in Package Manager:
 
    ```text
-   https://github.com/i1rr/unity-MCP.git#v1.0.0
+   https://github.com/i1rr/unity-MCP.git#v1.0.1
    ```
 
-2. Open **Tools > i1rr-unity-mcp Dashboard**.
-3. Connect your AI assistant's HTTP MCP client to the endpoint in **Overview**.
-   A VS Code MCP configuration is also created in your project.
+Git installs stay on their selected release. To use registry updates, remove the
+Git-installed package and install it from **My Registries** using the steps above.
 
 ## Capabilities
 
