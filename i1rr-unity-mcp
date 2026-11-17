@@ -8,7 +8,7 @@
     "url": "https://github.com/i1rr/unity-MCP.git"
   },
   "dist-tags": {
-    "latest": "1.0.3"
+    "latest": "1.1.0"
   },
   "versions": {
     "1.0.1": {
@@ -139,13 +139,56 @@
         "shasum": "3cc587bac1ea0ca5fa5e326684c90d0b32a2f6c0",
         "integrity": "sha512-sx0A0RIinQmtP1JQjXiWZAOloTGDIHf0BYzYRVUtNdu+YSigLGP5tDbG1nnb7R1vb9A1B0jW1TBktVE4jZB4Dw=="
       }
+    },
+    "1.1.0": {
+      "name": "i1rr-unity-mcp",
+      "version": "1.1.0",
+      "license": "SEE LICENSE IN LICENSE.md",
+      "repository": {
+        "type": "git",
+        "url": "https://github.com/i1rr/unity-MCP.git"
+      },
+      "displayName": "i1rr-unity-mcp",
+      "description": "Model Context Protocol tools for Unity Editor workflows and development-player inspection.",
+      "unity": "2022.3",
+      "unityRelease": "19f1",
+      "dependencies": {
+        "com.unity.modules.animation": "1.0.0",
+        "com.unity.modules.assetbundle": "1.0.0",
+        "com.unity.modules.audio": "1.0.0",
+        "com.unity.modules.imageconversion": "1.0.0",
+        "com.unity.modules.imgui": "1.0.0",
+        "com.unity.modules.jsonserialize": "1.0.0",
+        "com.unity.modules.particlesystem": "1.0.0",
+        "com.unity.modules.physics": "1.0.0",
+        "com.unity.modules.physics2d": "1.0.0",
+        "com.unity.modules.screencapture": "1.0.0",
+        "com.unity.modules.ui": "1.0.0",
+        "com.unity.modules.uielements": "1.0.0",
+        "com.unity.nuget.newtonsoft-json": "3.2.1"
+      },
+      "keywords": [
+        "Tools",
+        "AI",
+        "MCP"
+      ],
+      "author": {
+        "name": "i1rr"
+      },
+      "_id": "i1rr-unity-mcp@1.1.0",
+      "dist": {
+        "tarball": "https://github.com/i1rr/unity-MCP/releases/download/v1.1.0/i1rr-unity-mcp-1.1.0.tgz",
+        "shasum": "d6c0e4c7c402a2ca2681145b50bb06320a8ea95f",
+        "integrity": "sha512-8MTOXmXa9d8W/zkciQsMnNekUiDAKHTek1zRYtkF2ydMYzOOm1aEZRLmr26tzDCilqU0OeeycOMBORfufQmVGQ=="
+      }
     }
   },
   "time": {
     "created": "2026-11-16T18:37:32+11:00",
-    "modified": "2026-11-17T13:31:37+11:00",
+    "modified": "2026-11-17T21:38:10+11:00",
     "1.0.1": "2026-11-16T18:37:32+11:00",
     "1.0.2": "2026-11-16T19:24:55+11:00",
-    "1.0.3": "2026-11-17T13:31:37+11:00"
+    "1.0.3": "2026-11-17T13:31:37+11:00",
+    "1.1.0": "2026-11-17T21:38:10+11:00"
   }
 }
