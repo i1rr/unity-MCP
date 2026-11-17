@@ -9,7 +9,7 @@
       "url": "https://github.com/i1rr/unity-MCP.git"
     },
     "dist-tags": {
-      "latest": "1.1.2"
+      "latest": "1.1.3"
     },
     "versions": {
       "1.0.1": {
@@ -266,17 +266,60 @@
           "shasum": "b2810b3bba9c55b1a62177398ea530483b8f44db",
           "integrity": "sha512-VaP/epsFPX9BQE4K7jenwCFPy4X6Rj0g0LduDTsX1O4cJal+puOZCk4Fgwe3XHE6D1RqnYfbR1LrRkVyp5VnRQ=="
         }
+      },
+      "1.1.3": {
+        "name": "i1rr-unity-mcp",
+        "version": "1.1.3",
+        "license": "SEE LICENSE IN LICENSE.md",
+        "repository": {
+          "type": "git",
+          "url": "https://github.com/i1rr/unity-MCP.git"
+        },
+        "displayName": "i1rr-unity-mcp",
+        "description": "Model Context Protocol tools for Unity Editor workflows and development-player inspection.",
+        "unity": "2022.3",
+        "unityRelease": "19f1",
+        "dependencies": {
+          "com.unity.modules.animation": "1.0.0",
+          "com.unity.modules.assetbundle": "1.0.0",
+          "com.unity.modules.audio": "1.0.0",
+          "com.unity.modules.imageconversion": "1.0.0",
+          "com.unity.modules.imgui": "1.0.0",
+          "com.unity.modules.jsonserialize": "1.0.0",
+          "com.unity.modules.particlesystem": "1.0.0",
+          "com.unity.modules.physics": "1.0.0",
+          "com.unity.modules.physics2d": "1.0.0",
+          "com.unity.modules.screencapture": "1.0.0",
+          "com.unity.modules.ui": "1.0.0",
+          "com.unity.modules.uielements": "1.0.0",
+          "com.unity.nuget.newtonsoft-json": "3.2.1"
+        },
+        "keywords": [
+          "Tools",
+          "AI",
+          "MCP"
+        ],
+        "author": {
+          "name": "i1rr"
+        },
+        "_id": "i1rr-unity-mcp@1.1.3",
+        "dist": {
+          "tarball": "https://github.com/i1rr/unity-MCP/releases/download/v1.1.3/i1rr-unity-mcp-1.1.3.tgz",
+          "shasum": "75227fade0cb0fb84c0850a86996cbd58d6dda6c",
+          "integrity": "sha512-rtvBEREDIIIAbpEFbAB1l6465UZ0fjOxHUR8ImR8P4/IbyqOMxfTLt7fJuR3yT/EpjfmaoWrG/CodClS73BhEw=="
+        }
       }
     },
     "time": {
       "created": "2026-11-16T18:37:32+11:00",
-      "modified": "2026-11-17T23:15:01+11:00",
+      "modified": "2026-11-18T03:57:54+11:00",
       "1.0.1": "2026-11-16T18:37:32+11:00",
       "1.0.2": "2026-11-16T19:24:55+11:00",
       "1.0.3": "2026-11-17T13:31:37+11:00",
       "1.1.0": "2026-11-17T21:38:10+11:00",
       "1.1.1": "2026-11-17T22:46:10+11:00",
-      "1.1.2": "2026-11-17T23:15:01+11:00"
+      "1.1.2": "2026-11-17T23:15:01+11:00",
+      "1.1.3": "2026-11-18T03:57:54+11:00"
     }
   }
 }
