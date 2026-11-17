@@ -32,6 +32,10 @@ namespace I1rr.UnityMcp.Shared
         public McpClientTransportInfo TransportInfo => !_hasTransport ? null :
             new McpClientTransportInfo { UserAgent = _userAgent, RemoteAddress = _remoteAddress };
 
+        public McpRequestContext WithCancellation(CancellationToken cancellation) =>
+            new McpRequestContext(Method, _requestId, ProtocolVersion, LegacySessionId, IsInitialized,
+                _capabilities, _clientInfo, TransportInfo, AuthenticatedPrincipal, cancellation);
+
         internal McpRequestContext(string method, JToken requestId, string protocolVersion,
             string legacySessionId, bool initialized, JObject capabilities, JObject clientInfo,
             McpClientTransportInfo transportInfo, string authenticatedPrincipal,

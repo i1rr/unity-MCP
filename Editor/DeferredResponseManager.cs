@@ -34,6 +34,7 @@ namespace I1rr.UnityMcp.Editor
             public int ConnectionHash;
             public string SessionId;
             public string ToolName;
+            public McpSseStream Stream;
         }
 
         // --- Deferred Tool Call Handling ---
@@ -80,6 +81,19 @@ namespace I1rr.UnityMcp.Editor
             if (sessionId != null)
                 headers["MCP-Session-Id"] = sessionId;
 
+            McpSseStream stream = null;
+            if (requestContext.IsModern)
+            {
+                stream = EditorStreamingResponses.TryOpen(request, headers, requestContext);
+                if (stream == null)
+                {
+                    EditorResponseWriter.EnqueueJsonRpcResponse(request, 503, McpProtocol.BuildErrorResponse(id, -32000,
+                        "Stream capacity reached", new JObject { ["dispatch_state"] = "not_started" }), headers);
+                    return;
+                }
+                requestContext = stream.Context;
+            }
+
             McpProtocol.BeginDeferredRequest(sessionId, McpProtocol.MethodToolsCall, toolName);
             var arguments = paramsObj?["arguments"] as JObject;
             object rawResult;
@@ -89,6 +103,7 @@ namespace I1rr.UnityMcp.Editor
             }
             catch
             {
+                stream?.Abort();
                 McpProtocol.CompleteDeferredRequest(sessionId, true);
                 throw;
             }
@@ -107,7 +122,7 @@ namespace I1rr.UnityMcp.Editor
                     Deferred = deferred,
                     Deadline = DateTime.UtcNow.AddSeconds(deferred.ClampedTimeout),
                     ConnectionHash = connHash,
-                    SessionId = sessionId, ToolName = toolName
+                    SessionId = sessionId, ToolName = toolName, Stream = stream
                 });
             }
             else
@@ -115,7 +130,8 @@ namespace I1rr.UnityMcp.Editor
                 var toolResponse = rawResult as JObject ?? new JObject { ["result"] = "ok" };
                 var wrapped = McpProtocol.WrapToolResult(toolResponse);
                 var jsonRpcResp = McpProtocol.AdaptResponseForContext(McpProtocol.BuildResponse(id, wrapped), requestContext);
-                EditorResponseWriter.EnqueueJsonRpcResponse(request, 200, jsonRpcResp, headers);
+                if (stream != null) stream.Complete(jsonRpcResp);
+                else EditorResponseWriter.EnqueueJsonRpcResponse(request, 200, jsonRpcResp, headers);
                 McpProtocol.CompleteDeferredRequest(sessionId, wrapped["isError"]?.Value<bool>() == true);
             }
         }
@@ -132,6 +148,15 @@ namespace I1rr.UnityMcp.Editor
             {
                 var pending = _deferredResponses[i];
 
+                if (pending.Stream?.Cancellation.IsCancellationRequested == true)
+                {
+                    pending.Deferred.InvokeCleanup();
+                    McpProtocol.CompleteDeferredRequest(pending.SessionId, true);
+                    LogCompletion(pending, false, 0, "disconnected_outcome_unknown");
+                    _deferredResponses.RemoveAt(i);
+                    continue;
+                }
+
                 // Check session still valid
                 if (pending.SessionId != null && McpProtocol.GetSession(pending.SessionId) == null)
                 {
@@ -145,6 +170,7 @@ namespace I1rr.UnityMcp.Editor
                 // Check client disconnect
                 if (!IsDeferredClientAlive(pending))
                 {
+                    pending.Stream?.Abort();
                     pending.Deferred.InvokeCleanup();
                     CloseDeferredClient(pending);
                     McpProtocol.CompleteDeferredRequest(pending.SessionId, true);
@@ -156,6 +182,7 @@ namespace I1rr.UnityMcp.Editor
                 // Check timeout
                 if (now >= pending.Deadline)
                 {
+                    pending.Stream?.CancelWork();
                     pending.Deferred.InvokeCleanup();
                     var errResp = McpProtocol.BuildErrorResponse(pending.RequestId, -32000, "Deferred request timed out");
                     SendDeferredResponse(pending, 200, errResp);
@@ -191,6 +218,7 @@ namespace I1rr.UnityMcp.Editor
                 catch (Exception ex)
                 {
                     Debug.LogError($"[MCP] Deferred predicate threw: {ex}");
+                    pending.Stream?.CancelWork();
                     pending.Deferred.InvokeCleanup();
                     var errResp = McpProtocol.BuildErrorResponse(pending.RequestId, -32000,
                         $"Deferred predicate error: {ex.Message}");
@@ -215,7 +243,9 @@ namespace I1rr.UnityMcp.Editor
                 LogCompletion(pending, false, 0, "started_outcome_unknown");
                 try
                 {
-                    if (pending.ClientId >= 0)
+                    if (pending.Stream != null)
+                        pending.Stream.Complete(EditorResponseWriter.BuildInterruptedReloadResponse(pending.RequestId));
+                    else if (pending.ClientId >= 0)
                     {
                         var httpResponse = EditorResponseWriter.BuildReloadErrorHttpResponse(pending.RequestId, pending.Headers);
                         NativeSocketKeeper.StageResponse(pending.ClientId, httpResponse);
@@ -284,12 +314,19 @@ namespace I1rr.UnityMcp.Editor
 
         private static void SendDeferredResponse(PendingDeferredResponse pending, int statusCode, JObject response)
         {
+            if (pending.Stream != null && response["error"] is JObject streamError)
+                streamError["data"] = new JObject { ["dispatch_state"] = "started_outcome_unknown" };
             response = McpProtocol.AdaptResponseForContext(response, pending.Deferred.RequestContext);
             if (pending.Deferred.RequestContext?.IsModern == true) statusCode = McpProtocol.ModernHttpStatus(response);
             var isError = response?["error"] != null || response?["result"]?["isError"]?.Value<bool>() == true;
             McpProtocol.CompleteDeferredRequest(pending.SessionId, isError);
             var responseBytes = Encoding.UTF8.GetBytes(response.ToString(Formatting.None));
             LogCompletion(pending, !isError, responseBytes.Length, isError ? "deferred_error" : null);
+            if (pending.Stream != null)
+            {
+                pending.Stream.Complete(response);
+                return;
+            }
             var headers = pending.Headers ?? new Dictionary<string, string>();
             headers["Content-Type"] = "application/json";
 

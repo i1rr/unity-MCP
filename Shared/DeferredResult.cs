@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using Newtonsoft.Json.Linq;
 
 namespace I1rr.UnityMcp.Shared
@@ -10,6 +11,7 @@ namespace I1rr.UnityMcp.Shared
     /// </summary>
     public sealed class DeferredResult
     {
+        private int _cleaned;
         public static DeferredResult WaitForFrames(int count, float timeoutSeconds,
             Func<int> readFrame = null, Func<float> readTime = null)
         {
@@ -78,6 +80,7 @@ namespace I1rr.UnityMcp.Shared
         /// </summary>
         public void InvokeCleanup()
         {
+            if (Interlocked.Exchange(ref _cleaned, 1) != 0) return;
             try { Cleanup?.Invoke(); }
             catch (Exception ex)
             {

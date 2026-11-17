@@ -517,6 +517,21 @@ namespace I1rr.UnityMcp.Editor
                         return;
                     }
                 }
+                if (!context.IsNotification && context.Method == McpSubscriptions.Method)
+                {
+                    var subscriptionError = McpSubscriptions.Validate(modernRequest);
+                    if (subscriptionError != null)
+                        EditorResponseWriter.EnqueueJsonRpcResponse(request, 400, subscriptionError, headers);
+                    else
+                    {
+                        var stream = EditorStreamingResponses.TryOpen(request, headers, context);
+                        if (stream == null)
+                            EditorResponseWriter.EnqueueJsonRpcResponse(request, 503, McpProtocol.BuildErrorResponse(
+                                context.RequestId, -32000, "Stream capacity reached", new JObject { ["dispatch_state"] = "not_started" }), headers);
+                        else stream.Send(McpSubscriptions.Acknowledgment(context));
+                    }
+                    return;
+                }
                 var modernResponse = McpProtocol.ProcessRequestWithContext(modernRequest, context, out _);
                 if (context.IsNotification)
                     EditorResponseWriter.EnqueueResponse(request, 202, "Accepted", null, headers);

@@ -120,6 +120,8 @@ namespace I1rr.UnityMcp.Editor
             if (_state != 1) return;
             EditorDispatchReadiness.RecordUpdate();
 
+            EditorStreamingResponses.Pool.Tick();
+
             DeferredResponseManager.TickDeferredResponses();
             SessionManager.Instance?.Update();
 

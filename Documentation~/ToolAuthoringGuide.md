@@ -72,7 +72,7 @@ Guidelines:
 - Use `"default"` values where sensible.
 - Supported types: `string`, `integer`, `number`, `boolean`, `array`, `object`.
 
-The experimental 2026-07-28 HTTP path also validates `x-mcp-header` annotations.
+The 2026-07-28 HTTP path also validates `x-mcp-header` annotations.
 Use unique HTTP token names on string, boolean or JavaScript-safe integer
 properties reached only through `properties`. Arrays, composition and references
 cannot carry these annotations. Modern catalogs exclude invalid definitions;
@@ -83,8 +83,18 @@ Modern requests carry their version and client capabilities in `params._meta`
 and mirror version, method and applicable tool name/resource URI into HTTP
 headers. They need no initialization or session header. The host adds modern
 result envelopes to both immediate and deferred tools; tools should continue
-returning ordinary content. Until streaming/cancellation support is complete,
-this path is experimental and does not establish full modern conformance.
+returning ordinary content. Modern deferred responses use request-scoped SSE;
+ordinary replies use JSON. A host permits up to 16 streams, each with four queued
+frames and a 2 MiB frame limit. Narrow requests that exceed that limit.
+Subscription streams acknowledge an empty supported filter set; no optional
+change feed or resumability is advertised. Close unwanted streams promptly.
+
+Deferred work can observe `RequestContext.Cancellation` after its result is
+registered. Disconnect, timeout and shutdown cancel that token. Cancellation
+callbacks may execute on a transport worker, so keep Unity operations in the
+main-thread predicate and cleanup. Cleanup is invoked once on the main thread,
+including timeout/disconnect/reload paths. An interrupted operation may have
+already made changes: inspect its explicit job or object handle before retrying.
 
 ---
 

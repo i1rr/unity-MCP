@@ -238,6 +238,9 @@ namespace I1rr.UnityMcp.Editor
             EditorDispatchReadiness.Stop();
             EditorApplication.update -= McpEditorServer.DrainInboundQueue;
 
+            // Open SSE replies already have headers; finish them on their own writers before detaching.
+            EditorStreamingResponses.Pool.Shutdown("Unity interrupted this request; inspect its state before retrying");
+
             if (McpEditorServer._useNativeTransport && NativeSocketKeeper.IsRunning)
             {
                 NativeSocketKeeper.Detach();

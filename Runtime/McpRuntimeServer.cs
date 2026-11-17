@@ -90,9 +90,11 @@ namespace I1rr.UnityMcp.Runtime
             public DateTime Deadline;
             public int ConnectionHash;
             public string SessionId;
+            public McpSseStream Stream;
         }
 
         private readonly List<PendingDeferredResponse> _deferredResponses = new List<PendingDeferredResponse>();
+        private readonly McpStreamPool _streams = new McpStreamPool();
 
         /// <summary>
         /// The port the server is listening on, or 0 if not running.
@@ -184,6 +186,7 @@ namespace I1rr.UnityMcp.Runtime
             TickHeartbeat();
 
             // Tick deferred responses first
+            _streams.Tick();
             TickDeferredResponses();
 
             // Tick session manager
@@ -224,6 +227,7 @@ namespace I1rr.UnityMcp.Runtime
             Sessions.SessionManager.Shutdown();
 
             // Clean up deferred responses
+            _streams.Shutdown("Server stopped; inspect operation state before retrying");
             foreach (var pending in _deferredResponses)
             {
                 pending.Deferred.InvokeCleanup();
@@ -847,6 +851,21 @@ namespace I1rr.UnityMcp.Runtime
                         return;
                     }
                 }
+                if (!context.IsNotification && context.Method == McpSubscriptions.Method)
+                {
+                    var subscriptionError = McpSubscriptions.Validate(modernRequest);
+                    if (subscriptionError != null)
+                        SendJsonRpcResponse(client, subscriptionError, responseHeaders, statusCode: 400);
+                    else
+                    {
+                        var stream = OpenModernStream(client, responseHeaders, context);
+                        if (stream == null)
+                            SendJsonRpcResponse(client, McpProtocol.BuildErrorResponse(context.RequestId, -32000,
+                                "Stream capacity reached", new JObject { ["dispatch_state"] = "not_started" }), responseHeaders, statusCode: 503);
+                        else stream.Send(McpSubscriptions.Acknowledgment(context));
+                    }
+                    return;
+                }
                 var modernResponse = McpProtocol.ProcessRequestWithContext(modernRequest, context, out _);
                 if (context.IsNotification) SendResponse(client, 202, "Accepted", responseHeaders, null);
                 else SendJsonRpcResponse(client, modernResponse, responseHeaders, context);
@@ -1021,6 +1040,18 @@ namespace I1rr.UnityMcp.Runtime
                 headers["MCP-Session-Id"] = sessionId;
 
             // Invoke the tool
+            McpSseStream stream = null;
+            if (requestContext.IsModern)
+            {
+                stream = OpenModernStream(client, headers, requestContext);
+                if (stream == null)
+                {
+                    SendJsonRpcResponse(client, McpProtocol.BuildErrorResponse(id, -32000, "Stream capacity reached",
+                        new JObject { ["dispatch_state"] = "not_started" }), headers, statusCode: 503);
+                    return;
+                }
+                requestContext = stream.Context;
+            }
             McpProtocol.BeginDeferredRequest(sessionId, McpProtocol.MethodToolsCall, toolName);
             var arguments = paramsObj?["arguments"] as JObject;
             object rawResult;
@@ -1030,6 +1061,7 @@ namespace I1rr.UnityMcp.Runtime
             }
             catch
             {
+                stream?.Abort();
                 McpProtocol.CompleteDeferredRequest(sessionId, true);
                 throw;
             }
@@ -1051,7 +1083,7 @@ namespace I1rr.UnityMcp.Runtime
                     Deferred = deferred,
                     Deadline = DateTime.UtcNow.AddSeconds(deferred.ClampedTimeout),
                     ConnectionHash = connHash,
-                    SessionId = sessionId
+                    SessionId = sessionId, Stream = stream
                 });
                 // Connection stays open — response sent later by TickDeferredResponses
             }
@@ -1061,7 +1093,8 @@ namespace I1rr.UnityMcp.Runtime
                 var toolResponse = rawResult as JObject ?? new JObject { ["result"] = "ok" };
                 var wrapped = McpProtocol.WrapToolResult(toolResponse);
                 var jsonRpcResp = McpProtocol.BuildResponse(id, wrapped);
-                SendJsonRpcResponse(client, jsonRpcResp, headers, requestContext);
+                if (stream != null) stream.Complete(jsonRpcResp);
+                else SendJsonRpcResponse(client, jsonRpcResp, headers, requestContext);
                 McpProtocol.CompleteDeferredRequest(sessionId, wrapped["isError"]?.Value<bool>() == true);
             }
         }
@@ -1076,12 +1109,20 @@ namespace I1rr.UnityMcp.Runtime
             {
                 var pending = _deferredResponses[i];
 
+                if (pending.Stream?.Cancellation.IsCancellationRequested == true)
+                {
+                    pending.Deferred.InvokeCleanup();
+                    McpProtocol.CompleteDeferredRequest(pending.SessionId, true);
+                    _deferredResponses.RemoveAt(i);
+                    continue;
+                }
+
                 // Check session still valid
                 if (pending.SessionId != null && McpProtocol.GetSession(pending.SessionId) == null)
                 {
                     pending.Deferred.InvokeCleanup();
                     var errResp = McpProtocol.BuildErrorResponse(pending.RequestId, -32000, "Session terminated");
-                    SendJsonRpcResponse(pending.Client, errResp, pending.Headers, pending.Deferred.RequestContext);
+                    SendPendingResponse(pending, errResp);
                     _deferredResponses.RemoveAt(i);
                     continue;
                 }
@@ -1089,6 +1130,7 @@ namespace I1rr.UnityMcp.Runtime
                 // Check client disconnect
                 if (!IsTcpClientAlive(pending.Client))
                 {
+                    pending.Stream?.Abort();
                     pending.Deferred.InvokeCleanup();
                     McpProtocol.CompleteDeferredRequest(pending.SessionId, true);
                     try { pending.Client?.Close(); }
@@ -1100,10 +1142,11 @@ namespace I1rr.UnityMcp.Runtime
                 // Check timeout
                 if (now >= pending.Deadline)
                 {
+                    pending.Stream?.CancelWork();
                     pending.Deferred.InvokeCleanup();
                     var errResp = McpProtocol.BuildErrorResponse(pending.RequestId, -32000,
                         "Deferred request timed out");
-                    SendJsonRpcResponse(pending.Client, errResp, pending.Headers, pending.Deferred.RequestContext);
+                    SendPendingResponse(pending, errResp);
                     McpProtocol.CompleteDeferredRequest(pending.SessionId, true);
                     _deferredResponses.RemoveAt(i);
                     continue;
@@ -1129,7 +1172,7 @@ namespace I1rr.UnityMcp.Runtime
                         toolResult = ResponseSizeLimiter.Apply(toolResult);
                         var wrapped = McpProtocol.WrapToolResult(toolResult);
                         var jsonRpcResp = McpProtocol.BuildResponse(pending.RequestId, wrapped);
-                        SendJsonRpcResponse(pending.Client, jsonRpcResp, pending.Headers, pending.Deferred.RequestContext);
+                        SendPendingResponse(pending, jsonRpcResp);
                         McpProtocol.CompleteDeferredRequest(pending.SessionId,
                             wrapped["isError"]?.Value<bool>() == true);
                         pending.Deferred.InvokeCleanup();
@@ -1139,13 +1182,34 @@ namespace I1rr.UnityMcp.Runtime
                 catch (Exception ex)
                 {
                     Debug.LogError($"[MCP Runtime] Deferred predicate threw: {ex}");
+                    pending.Stream?.CancelWork();
                     pending.Deferred.InvokeCleanup();
                     var errResp = McpProtocol.BuildErrorResponse(pending.RequestId, -32000,
                         $"Deferred predicate error: {ex.Message}");
-                    SendJsonRpcResponse(pending.Client, errResp, pending.Headers, pending.Deferred.RequestContext);
+                    SendPendingResponse(pending, errResp);
                     McpProtocol.CompleteDeferredRequest(pending.SessionId, true);
                     _deferredResponses.RemoveAt(i);
                 }
+            }
+        }
+
+        private McpSseStream OpenModernStream(TcpClient client, Dictionary<string, string> headers, McpRequestContext context)
+        {
+            var output = client.GetStream();
+            output.WriteTimeout = 2000;
+            return _streams.TryOpen(output, () => McpSseStream.WriteHttpHeaders(output, headers),
+                () => client.Close(), () => IsTcpClientAlive(client), context);
+        }
+
+        private void SendPendingResponse(PendingDeferredResponse pending, JObject response)
+        {
+            if (pending.Stream == null)
+                SendJsonRpcResponse(pending.Client, response, pending.Headers, pending.Deferred.RequestContext);
+            else
+            {
+                if (response["error"] is JObject error)
+                    error["data"] = new JObject { ["dispatch_state"] = "started_outcome_unknown" };
+                pending.Stream.Complete(response);
             }
         }
 
