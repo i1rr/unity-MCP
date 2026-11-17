@@ -5,6 +5,10 @@ Install the package using the [README](../README.md), leave Unity open, then ope
 looks like `http://127.0.0.1:PORT/mcp`; replace `PORT` in the examples below with
 the actual number. Do not copy another project's endpoint or assume a fixed port.
 
+On a first registry install, Unity can show **Importing a scoped registry**.
+Close that informational notice before connecting. Native modal dialogs can
+suspend the Editor main thread even after the server has started listening.
+
 The Editor listens on the same computer only. Use a local client that supports
 HTTP MCP. A cloud-only connector cannot normally reach your computer's loopback
 address. See [authentication and runtime differences](AIConsumerGuide.md#local-connection-and-authentication)
