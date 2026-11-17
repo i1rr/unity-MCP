@@ -43,17 +43,11 @@ namespace I1rr.UnityMcp.Editor
         {
             var id = jsonRpcReq["id"];
 
-            var validationError = McpProtocol.ValidateJsonRpc(jsonRpcReq);
+            var requestContext = McpProtocol.CreateLegacyRequestContext(jsonRpcReq, sessionId);
+            var validationError = McpProtocol.ValidateRequestForDispatch(jsonRpcReq, requestContext);
             if (validationError != null)
             {
                 EditorResponseWriter.EnqueueJsonRpcResponse(request, 200, validationError, headers);
-                return;
-            }
-
-            if (!McpProtocol.IsSessionInitialized(sessionId))
-            {
-                var errResp = McpProtocol.BuildErrorResponse(id, McpProtocol.ErrorServerNotInitialized, "Server not initialized");
-                EditorResponseWriter.EnqueueJsonRpcResponse(request, 200, errResp, headers);
                 return;
             }
 
@@ -99,6 +93,7 @@ namespace I1rr.UnityMcp.Editor
             {
                 deferred.CreatedAtUtc = DateTime.UtcNow;
                 deferred.SessionId = sessionId;
+                deferred.RequestContext = requestContext;
                 _deferredResponses.Add(new PendingDeferredResponse
                 {
                     ClientId = request.ClientId,

@@ -24,6 +24,7 @@ namespace I1rr.UnityMcp.Shared
         public string Id { get; }
         public bool IsInitialized { get; internal set; }
         public string ProtocolVersion { get; internal set; }
+        internal JObject ClientCapabilities { get; set; } = new JObject();
         public DateTime CreatedAtUtc { get; internal set; }
         public DateTime LastActivityUtc { get; set; }
 
@@ -259,6 +260,7 @@ namespace I1rr.UnityMcp.Shared
                 ["id"] = session.Id,
                 ["protocolVersion"] = session.ProtocolVersion,
                 ["initialized"] = session.IsInitialized,
+                ["clientCapabilities"] = session.ClientCapabilities.DeepClone(),
                 ["createdAtUtc"] = session.CreatedAtUtc.ToString("o"),
                 ["lastActivityUtc"] = session.LastActivityUtc.ToString("o"),
                 ["clientName"] = session.ClientName,
@@ -288,6 +290,7 @@ namespace I1rr.UnityMcp.Shared
             var session = new McpSession(sessionId, state["protocolVersion"]?.Value<string>())
             {
                 IsInitialized = state["initialized"]?.Value<bool>() ?? false,
+                ClientCapabilities = (JObject)(state["clientCapabilities"] as JObject)?.DeepClone() ?? new JObject(),
                 ClientName = SanitizeIdentityValue(state["clientName"]?.Value<string>()),
                 ClientTitle = SanitizeIdentityValue(state["clientTitle"]?.Value<string>()),
                 ClientVersion = SanitizeIdentityValue(state["clientVersion"]?.Value<string>()),
@@ -617,6 +620,49 @@ namespace I1rr.UnityMcp.Shared
         /// </summary>
         public static JObject ProcessRequest(JObject request, string sessionId, out string newSessionId,
             McpClientTransportInfo transportInfo = null)
+            => ProcessRequestWithContext(request, CreateLegacyRequestContext(request, sessionId, transportInfo),
+                out newSessionId);
+
+        /// <summary>Captures negotiated legacy metadata once, before dispatch or deferred work.</summary>
+        public static McpRequestContext CreateLegacyRequestContext(JObject request, string sessionId,
+            McpClientTransportInfo transportInfo = null, string authenticatedPrincipal = null,
+            System.Threading.CancellationToken cancellation = default)
+        {
+            var session = GetSession(sessionId);
+            var parameters = request?["params"] as JObject;
+            var clientInfo = session == null ? parameters?["clientInfo"] as JObject : new JObject
+            {
+                ["name"] = session.ClientName,
+                ["title"] = session.ClientTitle,
+                ["version"] = session.ClientVersion
+            };
+            return new McpRequestContext(
+                request?["method"]?.Type == JTokenType.String ? (string)request["method"] : null,
+                request?["id"], session?.ProtocolVersion ?? ProtocolVersionBaseline, sessionId,
+                session?.IsInitialized ?? false, session?.ClientCapabilities ?? parameters?["capabilities"] as JObject,
+                clientInfo, transportInfo ?? (session == null ? null : new McpClientTransportInfo
+                { UserAgent = session.UserAgent, RemoteAddress = session.RemoteAddress }),
+                authenticatedPrincipal, cancellation);
+        }
+
+        /// <summary>Shared ordinary/deferred envelope and admission checks, before any tool invocation.</summary>
+        public static JObject ValidateRequestForDispatch(JObject request, McpRequestContext context)
+        {
+            var error = ValidateJsonRpc(request);
+            if (error != null) return error;
+            if (context == null) throw new ArgumentNullException(nameof(context));
+            var id = request["id"];
+            var method = (string)request["method"];
+            if (context.Method != method || !JToken.DeepEquals(context.RequestId, id))
+                return BuildErrorResponse(id, ErrorInvalidRequest, "Request context does not match this request");
+            if (!context.IsInitialized && method != MethodInitialize && method != NotificationInitialized)
+                return BuildErrorResponse(id, ErrorServerNotInitialized, "Server not initialized");
+            return null;
+        }
+
+        /// <summary>Dispatches using captured metadata; retained legacy callbacks receive the original session ID.</summary>
+        public static JObject ProcessRequestWithContext(JObject request, McpRequestContext context,
+            out string newSessionId)
         {
             newSessionId = null;
 
@@ -624,6 +670,10 @@ namespace I1rr.UnityMcp.Shared
             var validationError = ValidateJsonRpc(request);
             if (validationError != null)
                 return validationError;
+
+            if (context == null) throw new ArgumentNullException(nameof(context));
+            var sessionId = context.LegacySessionId;
+            var transportInfo = context.TransportInfo;
 
             var method = request["method"].Value<string>();
             var id = request["id"];
@@ -636,15 +686,14 @@ namespace I1rr.UnityMcp.Shared
             if (sessionId != null && _sessions.TryGetValue(sessionId, out var activeSession))
                 activeSession.LastActivityUtc = DateTime.UtcNow;
 
-            // Pre-initialize gate — check the specific session
-            bool sessionInitialized = sessionId != null && _sessions.TryGetValue(sessionId, out var sess) && sess.IsInitialized;
-            if (!sessionInitialized && method != MethodInitialize && method != NotificationInitialized)
+            // Use the same captured admission state as deferred requests.
+            var admissionError = ValidateRequestForDispatch(request, context);
+            if (admissionError != null)
             {
                 if (isNotification)
                     return null;
 
-                return TrackResponse(sessionId,
-                    BuildErrorResponse(id, ErrorServerNotInitialized, "Server not initialized"));
+                return TrackResponse(sessionId, admissionError);
             }
 
             // Check for unknown methods
@@ -826,6 +875,7 @@ namespace I1rr.UnityMcp.Shared
 
             // Create new session
             var session = new McpSession(Guid.NewGuid().ToString("N"), protocolVersion);
+            session.ClientCapabilities = (JObject)(clientParams?["capabilities"] as JObject)?.DeepClone() ?? new JObject();
             ApplyClientDescriptor(session, descriptor, identitySource);
             session.UserAgent = SanitizeIdentityValue(transportInfo?.UserAgent) ?? identitySource?.UserAgent;
             session.RemoteAddress = SanitizeIdentityValue(transportInfo?.RemoteAddress) ?? identitySource?.RemoteAddress;

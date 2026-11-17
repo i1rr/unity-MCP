@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Capture immutable per-request metadata for ordinary and deferred dispatch, retaining legacy callbacks and session APIs.
+- Share request admission checks and preserve negotiated client capabilities through legacy reload recovery.
+
 ## [1.0.3]
 
 - Preserve exact floating UI values and bounds through inspection JSON.

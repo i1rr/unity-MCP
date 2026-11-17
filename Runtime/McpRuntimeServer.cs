@@ -946,18 +946,11 @@ namespace I1rr.UnityMcp.Runtime
             var id = request["id"];
 
             // Validate JSON-RPC structure
-            var validationError = McpProtocol.ValidateJsonRpc(request);
+            var requestContext = McpProtocol.CreateLegacyRequestContext(request, sessionId);
+            var validationError = McpProtocol.ValidateRequestForDispatch(request, requestContext);
             if (validationError != null)
             {
                 SendJsonRpcResponse(client, validationError, headers);
-                return;
-            }
-
-            // Check pre-init gate
-            if (!McpProtocol.IsSessionInitialized(sessionId))
-            {
-                var errResp = McpProtocol.BuildErrorResponse(id, McpProtocol.ErrorServerNotInitialized, "Server not initialized");
-                SendJsonRpcResponse(client, errResp, headers);
                 return;
             }
 
@@ -1011,6 +1004,7 @@ namespace I1rr.UnityMcp.Runtime
 
                 deferred.CreatedAtUtc = DateTime.UtcNow;
                 deferred.SessionId = sessionId;
+                deferred.RequestContext = requestContext;
                 _deferredResponses.Add(new PendingDeferredResponse
                 {
                     Client = client,

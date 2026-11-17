@@ -65,6 +65,9 @@ namespace I1rr.UnityMcp.Shared
         /// </summary>
         public string SessionId { get; set; }
 
+        /// <summary>Host-captured request metadata for completion on a later frame. SessionId remains compatible.</summary>
+        public McpRequestContext RequestContext { get; set; }
+
         /// <summary>
         /// Clamps <see cref="TimeoutSeconds"/> to the allowed range [1, 60].
         /// </summary>

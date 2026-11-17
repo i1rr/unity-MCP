@@ -164,6 +164,16 @@ Key points:
 - `TimeoutSeconds` is clamped to [1, 60].
 - `Cleanup` is called regardless of completion reason.
 
+The host attaches `DeferredResult.RequestContext` before polling the result.
+Read it from later completion callbacks when you need the request's captured
+protocol version, capabilities or client metadata. Its JSON/transport properties
+return copies; session replacement or another request cannot rewrite that
+snapshot. Client identity is self-reported and is not authorization.
+`SessionId` and the existing string-session protocol callbacks remain available
+for legacy extensions. Capturing metadata does not make a request survive a
+reload or make a mutation safe to repeat; preserve explicit operation handles
+and inspect an unknown outcome before retrying.
+
 ---
 
 ## AutoRoute (Editor/Runtime Tool Pairs)
