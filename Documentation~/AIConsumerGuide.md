@@ -191,6 +191,34 @@ unknown outcome. Reacquiring a handle is an explicit new operation, not an
 idempotent replay. This API does not verify input bindings, held-button release
 gates or hardware input; keep those checks in input-driven fixtures.
 
+## Explicit handles and interrupted operations
+
+The transport's request ID identifies one JSON-RPC exchange. It is not an
+idempotency key. Application IDs below remain valid across independent modern
+requests and legacy session changes, within each API's own lifetime.
+
+| Operation | Recovery contract | Retention and limits |
+| --- | --- | --- |
+| `run_tests` / `get_test_run` | Supply `run_id` before dispatch. Retry the same mode and exact ordered test array, or poll. Changed arguments reject. A retained interrupted job is not launched again. | JSON/XML under `Library/i1rr-unity-mcp-runs` survive reload/restart until removed; no automatic TTL. Restart marks unfinished jobs interrupted. |
+| Refresh / `get_refresh_status` | Reuse `request_id` with the same import options. Different options reject before import. Older records without an options signature require status lookup. | Up to 64 records in Unity Editor-session storage; reload survives, restart/eviction does not. |
+| `capture_game_view_sequence` / `get_game_view_sequence` | Supply `capture_id` and identical normalized capture settings. A retained ID returns its status; changed settings reject. | Status/media in `Library/i1rr-unity-mcp-sequences` persist until removed. One active capture, bounded frames and deadline; mode/reload interruption remains explicit. |
+| Recording `session_id` | Poll or stop the known profiler recording. Starting another recording has no caller-supplied replay key. | At most four active recordings; stopped IDs are removed. Editor mode changes/reload and runtime shutdown end their own recording state. |
+| UI action `handle` | Inspect, then consume once. Consumption happens before callbacks. Any retry of a consumed handle rejects, even after a callback error. | At most 512 handles, 120 seconds each; detachment, mode changes and reload invalidate them. |
+| Object IDs and unprotected mutations | Reinspect the actual object/asset or owning job after interruption. Creates, deletes, undo/redo, menus and arbitrary code have no general replay guarantee. | Live object IDs are not durable asset identities. Use saved asset identities where supported. |
+
+A missing, evicted or deleted record is not evidence that an old mutation never
+ran. Do not create a replacement ID or resubmit an unknown operation
+automatically. Keep the original ID and request outside the response, inspect
+effects, and make any new attempt deliberate. On process crash, work may have
+started before its final status was saved. These APIs do not promise universal
+exactly-once effects.
+
+An HTTP disconnect cancels request-scoped deferred waiting. It does not roll
+back completed changes or cancel an independently scheduled Unity test job.
+`dispatch_state: not_started` permits bounded retry after readiness/capacity
+recovers; `started_outcome_unknown`, a generic timeout or a lost connection
+requires the recovery contract above. Read-only queries can use fresh requests.
+
 ## Import and compilation verification
 
 `execute_menu_item` observes synchronous handler errors as well as Unity's dispatch
@@ -466,19 +494,19 @@ Tool errors return structured error objects:
 | `not_found` | Resource doesn't exist | Verify path/name via discovery tools |
 | `not_in_play_mode` | Tool requires Play Mode | Enter Play Mode first |
 | `path_violation` | Path outside project | Use project-relative paths |
-| `timeout` | Operation exceeded time budget | Narrow scope or retry |
+| `timeout` | Operation exceeded time budget | Inspect effects; retry reads or use a protected operation ID |
 | `internal_error` | Unexpected server error | Retry once; if persistent, report |
 | `limit_reached` | Resource limit hit | Reduce scope or wait |
 | `session_capacity` | Retained MCP sessions temporarily full | Respect `Retry-After`; reuse the prior session ID or stable instance identity |
 
 ### Retry Strategy
 
-- **HTTP 503 (Service Unavailable)**: Domain reload or transient session capacity pressure. Respect `Retry-After`, use bounded exponential backoff with jitter, and do not mark the integration permanently offline.
+- **HTTP 503 (Service Unavailable)**: Readiness, reload or capacity pressure. Respect `Retry-After` when present and use bounded backoff. Retry mutations only when dispatch is explicitly `not_started` or their application ID protects replay.
 - **HTTP 401 (Unauthorized)**: Auth token invalid. Re-read the token file and retry.
 - **HTTP 429 (Too Many Requests)**: Queue full. Back off exponentially (1s, 2s, 4s).
 - **Tool errors** (`error_code` field): Generally do not retry — fix the input instead.
 - **`timeout` errors**: Inspect state before replaying mutations. Read-only queries can be retried with narrower parameters.
-- **`internal_error`**: Retry once. If it persists, the tool has a bug.
+- **`internal_error`**: Inspect mutation effects before another attempt; read-only queries may be retried once. Record persistent failures with evidence.
 
 ---
 

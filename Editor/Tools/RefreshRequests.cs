@@ -40,7 +40,15 @@ namespace I1rr.UnityMcp.Editor
             if (!Guid.TryParse(id, out var guid))
                 return McpError.Create(McpErrorCodes.InvalidParameter, "request_id must be a UUID.");
             id = guid.ToString("N");
-            if (Jobs[id] is JObject existing) return (JObject)existing.DeepClone();
+            if (Jobs[id] is JObject existing)
+            {
+                if (existing["import_options"] == null)
+                    return McpError.Create(McpErrorCodes.InvalidState,
+                        "This older refresh record has no request signature. Poll get_refresh_status; do not replay an unknown import.");
+                if ((int)existing["import_options"] != (int)options)
+                    return McpError.Create(McpErrorCodes.InvalidParameter, "request_id already identifies different import options.");
+                return (JObject)existing.DeepClone();
+            }
 
             if (Jobs.Count >= 64)
             {
@@ -49,7 +57,7 @@ namespace I1rr.UnityMcp.Editor
                 oldest.Remove();
             }
 
-            var job = new JObject { ["request_id"] = id, ["status"] = "refresh_requested",
+            var job = new JObject { ["request_id"] = id, ["import_options"] = (int)options, ["status"] = "refresh_requested",
                 ["compilation_complete"] = false, ["domain"] = Domain, ["compiled"] = false, ["errors"] = false };
             Jobs[id] = job;
             Save();

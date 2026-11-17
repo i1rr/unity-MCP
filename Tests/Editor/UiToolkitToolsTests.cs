@@ -83,6 +83,35 @@ namespace I1rr.UnityMcp.Editor.Tests
             yield return null;
         }
 
+        [UnityTest] public IEnumerator FreshStatelessRequestsCannotReplayAConsumedUiHandle()
+        {
+            var button = root.Q<Button>("submit");
+            int calls = 0;
+            button.clicked += () => calls++;
+            string handle = Handle("submit");
+            var previous = McpProtocol.OnToolsCall;
+            try
+            {
+                McpProtocol.OnToolsCall = (request, _) => UiToolkitTools.Act((JObject)request["params"]["arguments"]);
+                JObject Dispatch(int requestId)
+                {
+                    var request = McpModernProtocolTests.Request("tools/call");
+                    request["id"] = requestId;
+                    request["params"]["name"] = "act_on_ui_element";
+                    request["params"]["arguments"] = new JObject { ["handle"] = handle, ["action"] = "submit" };
+                    return McpProtocol.ProcessRequestWithContext(request, McpProtocol.CreateModernRequestContext(request), out _);
+                }
+                var first = Dispatch(1);
+                Assert.That(first["result"]["isError"], Is.Null);
+                Assert.That((string)first["result"]["resultType"], Is.EqualTo("complete"));
+                Assert.That(calls, Is.EqualTo(1));
+                Assert.That((bool)Dispatch(2)["result"]["isError"], Is.True);
+                Assert.That(calls, Is.EqualTo(1));
+            }
+            finally { McpProtocol.OnToolsCall = previous; }
+            yield return null;
+        }
+
         [UnityTest] public IEnumerator ValuesNotifyOnceAndSameValueDoesNotNotifyAgain()
         {
             var toggle = new Toggle { name = "toggle" }; var slider = new Slider(0, 10) { name = "slider" };
