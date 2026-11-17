@@ -1043,9 +1043,11 @@ namespace I1rr.UnityMcp.Runtime
             McpSseStream stream = null;
             if (requestContext.IsModern)
             {
+                McpRequestActivity.Begin(requestContext, toolName);
                 stream = OpenModernStream(client, headers, requestContext);
                 if (stream == null)
                 {
+                    McpRequestActivity.Finish(requestContext, "not_started");
                     SendJsonRpcResponse(client, McpProtocol.BuildErrorResponse(id, -32000, "Stream capacity reached",
                         new JObject { ["dispatch_state"] = "not_started" }), headers, statusCode: 503);
                     return;

@@ -98,6 +98,8 @@ namespace I1rr.UnityMcp.Editor
         [SerializeField] private int _selectedTab;
         private static readonly string[] Tabs = { "Overview", "Tools", "Settings", "Activity" };
         private readonly List<SessionView> _sessionViews = new();
+        private JArray _modernActivity = new JArray();
+        private int _modernStreamCount;
         private sealed class ToolView
         {
             internal string Name, Description, Calls, Category;
@@ -153,6 +155,7 @@ namespace I1rr.UnityMcp.Editor
         private bool _refreshRequested;
         private bool _clearLogRequested;
         private string _pendingTerminateSessionId;
+        private string _pendingCancelOperationId;
         private enum BacklogAction { None, Enable, Disable, Repair }
         private BacklogAction _pendingBacklogAction;
         private McpBacklogSetup.State _backlogState;
@@ -250,6 +253,8 @@ namespace I1rr.UnityMcp.Editor
             _issueSnapshot = _issueReader.Read(_backlogProjectRoot);
 
             RefreshSessions();
+            _modernActivity = McpRequestActivity.Snapshot();
+            _modernStreamCount = EditorStreamingResponses.Pool.Count;
             if (_selectedTab == 0 && (EditorApplication.timeSinceStartup - _lastModuleSample >= 5 || _lastModuleRevision != McpToolRegistry.CatalogRevision))
             {
                 _lastModuleSample = EditorApplication.timeSinceStartup;
@@ -325,7 +330,10 @@ namespace I1rr.UnityMcp.Editor
             ["snapshot_samples"] = _snapshotSamples, ["tool_catalog_builds"] = _toolCatalogBuilds,
             ["backlog_state_reads"] = _backlogStateCache.Inspections, ["tool_count"] = _toolCount,
             ["modules"] = _moduleSnapshot["modules"]?.DeepClone(),
-            ["module_availability_checks"] = McpToolRegistry.ModuleAvailabilityChecks
+            ["module_availability_checks"] = McpToolRegistry.ModuleAvailabilityChecks,
+            ["modern_activity"] = _modernActivity.DeepClone(),
+            ["modern_activity_capacity"] = McpRequestActivity.Capacity,
+            ["active_request_streams"] = _modernStreamCount
         };
 
         private void RefreshSessions()
@@ -513,6 +521,8 @@ namespace I1rr.UnityMcp.Editor
                         DrawModules();
                         EditorGUILayout.Space(6);
                         DrawConnectedSessions();
+                        EditorGUILayout.Space(6);
+                        DrawModernActivity();
                         break;
                     case 1: DrawTools(); break;
                     case 2:
@@ -595,6 +605,12 @@ namespace I1rr.UnityMcp.Editor
                 McpProtocol.TerminateSession(_pendingTerminateSessionId);
                 _expandedSessions.Remove(_pendingTerminateSessionId);
                 _pendingTerminateSessionId = null;
+            }
+            if (_pendingCancelOperationId != null)
+            {
+                McpRequestActivity.Cancel(_pendingCancelOperationId);
+                _pendingCancelOperationId = null;
+                _refreshRequested = true;
             }
 
             if (_clearLogRequested)
@@ -687,7 +703,7 @@ namespace I1rr.UnityMcp.Editor
         {
             using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
             {
-                GUILayout.Label("MCP Clients", _headerStyle);
+                GUILayout.Label("Legacy client sessions", _headerStyle);
                 EditorGUILayout.Space(2);
 
                 if (_sessionViews.Count == 0)
@@ -749,6 +765,33 @@ namespace I1rr.UnityMcp.Editor
 
                 EditorGUILayout.Space(2);
                 EditorGUILayout.LabelField($"Retained sessions: {_sessionViews.Count}", EditorStyles.miniLabel);
+            }
+        }
+
+        private void DrawModernActivity()
+        {
+            using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
+            {
+                GUILayout.Label("Stateless requests", _headerStyle);
+                EditorGUILayout.LabelField($"Recent: {_modernActivity.Count}/{McpRequestActivity.Capacity} · Open streams: {_modernStreamCount}", EditorStyles.miniLabel);
+                EditorGUILayout.HelpBox("Client labels are self-reported. Cancel stops request work where supported; it does not undo effects or revoke access.", MessageType.Info);
+                foreach (var item in _modernActivity.Take(12))
+                {
+                    using (new EditorGUILayout.HorizontalScope())
+                    {
+                        string client = (string)item["client_label"];
+                        if (string.IsNullOrEmpty(client)) client = "Unreported client";
+                        string operation = (string)item["tool"];
+                        if (string.IsNullOrEmpty(operation)) operation = (string)item["method"];
+                        GUILayout.Label(new GUIContent(client + " · " + operation, "Operation " + (string)item["operation_id"]), EditorStyles.miniLabel);
+                        GUILayout.Label((string)item["status"], EditorStyles.miniLabel, GUILayout.Width(145));
+                        using (new EditorGUI.DisabledScope((bool?)item["cancellable"] != true))
+                            if (GUILayout.Button("Cancel", EditorStyles.miniButton, GUILayout.Width(48)))
+                            { _pendingCancelOperationId = (string)item["operation_id"]; _refreshRequested = true; }
+                    }
+                }
+                if (_modernActivity.Count > 12)
+                    EditorGUILayout.LabelField("Showing the 12 most recent requests; get_dashboard_state includes retained history.", EditorStyles.miniLabel);
             }
         }
 
@@ -955,8 +998,8 @@ namespace I1rr.UnityMcp.Editor
                 EditorGUILayout.Space(4);
 
                 var newMaxSessions = EditorGUILayout.IntField(
-                    new GUIContent("Max Retained Sessions",
-                        "Hard limit for lightweight MCP session records. At capacity, abandoned anonymous " +
+                    new GUIContent("Legacy Session Limit",
+                        "Hard limit for legacy MCP session records; modern request history never gates admission. At capacity, abandoned anonymous " +
                         "records from the same client family are reclaimed before unrelated stale records."),
                     McpProtocol.MaxRetainedSessions);
                 newMaxSessions = Math.Max(1, newMaxSessions);

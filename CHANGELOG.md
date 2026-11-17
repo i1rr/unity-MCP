@@ -7,6 +7,7 @@
 - Add MCP 2026-07-28 HTTP dispatch without legacy sessions in Editor and runtime, with metadata/header admission, discovery, deterministic catalogs and modern envelopes.
 - Isolate bounded subscription/deferred SSE writers, cancel work on disconnect or timeout, finish interrupted streams on shutdown/reload where possible and run deferred cleanup once. No optional change feed is advertised.
 - Reject refresh request-ID reuse with different import options; keep older records without captured options readable through status lookup. Document per-operation retry/retention limits and verify consumed UI handles across stateless requests.
+- Separate bounded modern activity/cancellation from legacy Dashboard sessions, retain the legacy UDP discovery field and add supported versions, and document observed native/modern SDK client behavior.
 
 ## [1.0.3]
 

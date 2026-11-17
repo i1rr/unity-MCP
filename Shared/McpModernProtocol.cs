@@ -49,6 +49,21 @@ namespace I1rr.UnityMcp.Shared
 
         private static JObject ProcessModernRequest(JObject request, McpRequestContext context)
         {
+            var admission = ValidateRequestForDispatch(request, context);
+            if (admission != null) return admission;
+            var name = (request["params"] as JObject)?["name"];
+            McpRequestActivity.Begin(context, name?.Type == JTokenType.String ? (string)name : null);
+            try
+            {
+                var response = DispatchModernRequest(request, context);
+                McpRequestActivity.Finish(context, response?["error"] != null || (bool?)response?["result"]?["isError"] == true ? "failed" : "completed");
+                return response;
+            }
+            catch { McpRequestActivity.Finish(context, "failed_outcome_unknown"); throw; }
+        }
+
+        private static JObject DispatchModernRequest(JObject request, McpRequestContext context)
+        {
             var error = ValidateRequestForDispatch(request, context);
             if (error != null) return error;
             if (context.IsNotification) return null;

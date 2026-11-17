@@ -41,6 +41,54 @@ not an OAuth login. If replacing an existing entry, inspect it first; use
 Use `codex mcp add --help` to check the flags supported by your CLI. A saved entry
 does not establish a working connection; perform the first check below.
 
+For a private project-local Codex entry, `.codex/config.toml` uses TOML:
+
+```toml
+[mcp_servers.i1rr-unity-mcp]
+url = "http://127.0.0.1:PORT/mcp"
+enabled = true
+startup_timeout_sec = 30
+tool_timeout_sec = 90
+```
+
+Keep local credentials/configuration outside Git. A root `.mcp.json` written for
+another client does not register tools in Codex. Refresh the actual client's MCP
+connections after configuration changes, then verify directly callable tools in
+the chat. Script helpers remain useful for scripts and wire diagnostics.
+
+## Protocol versions and observed clients
+
+Current main supports MCP 2026-07-28 per-request HTTP alongside the existing
+2025-03-26 and 2025-11-25 initialization paths. Older clients continue to use their
+negotiated sessions. Updating the server does not upgrade a client's protocol.
+
+Local Windows/Unity 6000.6.9f1 acceptance observed Codex MCP client
+`0.169.0-alpha.11.1` using 2025-03-26 through direct tools, including discovery,
+read, create/readback/delete, deferred work and reload reconnection. The official
+TypeScript `@modelcontextprotocol/client@2.4.0` passed those workflows plus
+subscriptions and a fresh reconnect over 2026-07-28 with no session header.
+These are the tested clients; separate Claude Code/Cursor acceptance remains
+[#5](https://github.com/i1rr/unity-MCP/issues/5) and non-Windows validation
+[#6](https://github.com/i1rr/unity-MCP/issues/6).
+
+The TypeScript SDK's modern opt-in is explicit:
+
+```typescript
+import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
+const client = new Client({ name: 'my-client', version: '1.0' }, {
+  versionNegotiation: { mode: { pin: '2026-07-28' } }
+});
+await client.connect(new StreamableHTTPClientTransport(new URL(endpoint)));
+```
+
+Provide bearer authentication through the transport's private `requestInit`
+headers when required. See the [SDK version-negotiation guide](https://github.com/modelcontextprotocol/typescript-sdk/blob/main/docs/migration/support-2026-07-28.md).
+Default legacy mode remains supported. Custom helpers must probe discovery before
+sending effects and allow legacy fallback only for a recognized legacy server
+response. Authentication, modern header/metadata errors and an interrupted
+mutation never justify downgrade or replay. Modern helper calls must not load,
+mint or retain a session ID; use fresh requests with explicit application handles.
+
 ## Claude Code
 
 Use a local-scoped HTTP server from your project directory:

@@ -14,6 +14,24 @@ namespace I1rr.UnityMcp.Runtime.Tests
 {
     public class ModernHttpPipelineTests
     {
+        [Test] public void DiscoveryAnnouncementKeepsLegacyDefaultAndListsModernVersion()
+        {
+            var go = new GameObject("Discovery announcement test");
+            try
+            {
+                var discovery = go.AddComponent<UdpDiscovery>();
+                const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+                typeof(UdpDiscovery).GetField("_serverPort", flags).SetValue(discovery, 8123);
+                typeof(UdpDiscovery).GetMethod("BuildPayload", flags).Invoke(discovery, null);
+                var bytes = (byte[])typeof(UdpDiscovery).GetField("_payload", flags).GetValue(discovery);
+                var payload = JObject.Parse(Encoding.UTF8.GetString(bytes));
+                Assert.That((string)payload["protocol"], Is.EqualTo(McpProtocol.ProtocolVersionBaseline));
+                Assert.That(((JArray)payload["protocols"]).Values<string>(), Does.Contain(McpProtocol.ProtocolVersionModern));
+                Assert.That(payload["token"], Is.Null);
+            }
+            finally { Object.DestroyImmediate(go); }
+        }
+
         [TestCase(null, "test", "server/discover", 200)]
         [TestCase(null, "test", "tools/list", 400)]
         [TestCase("https://attacker.invalid", "test", "server/discover", 403)]

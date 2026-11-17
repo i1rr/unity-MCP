@@ -265,7 +265,23 @@ and verify the expected new assembly or a versioned helper entry point before
 calling it. `domainId` detects reloads; it alone does not certify compilation of
 a particular helper assembly. Never blindly repeat a timed-out mutation.
 
-## Session Lifecycle
+## Protocol lifecycle
+
+### Modern per-request HTTP
+
+MCP 2026-07-28 requests need no initialization or protocol session. Each POST
+carries version/capabilities in `params._meta` and the required matching HTTP
+headers. `server/discover` is a harmless optional probe. Use a supported SDK to
+handle mirrored names, custom parameter headers, error mapping and SSE.
+See [tested client setup](ConnectYourClient.md#protocol-versions-and-observed-clients).
+
+The Dashboard shows bounded modern activity separately from legacy sessions:
+up to 128 records in the current managed domain, with active stream cancellation.
+History eviction never affects admission. Display labels are self-reported and
+cannot grant authority. Cancel stops request work where supported; it neither
+undoes effects nor changes authentication or module permissions. Completed
+activity is observational, not a durable job ledger. Use application status tools
+after interruption or reload. The sections below describe legacy sessions.
 
 ### Initialize
 
@@ -305,7 +321,13 @@ Unity reloads C# assemblies frequently (script changes, entering Play Mode). Dur
 
 Sessions survive domain reloads. Keep the session ID; reinitialize only on an explicit expired/invalid-session rejection. A pending deferred operation instead returns JSON-RPC error data `error_code: reload_interrupted` and `dispatch_state: started_outcome_unknown`. Inspect its effects before retrying a mutation. A timeout/disconnection also has an unknown outcome.
 
-The server deliberately advertises `tools.listChanged: false` and does not offer an unsolicited SSE notification stream. There is no standard MCP "Unity is reloading" notification. Use HTTP availability responses, poll `get_editor_state`, and rediscover `tools/list` after a domain change. Do not invent client-specific notifications or treat an open socket as readiness. A manual Dashboard Stop survives reload until Start is pressed; an Editor restart starts normally.
+The server advertises `tools.listChanged: false`. Modern `subscriptions/listen`
+uses its own bounded SSE response and acknowledges an empty supported filter
+set. There is no unsolicited GET stream or optional change feed. There is no
+standard MCP "Unity is reloading" notification. Use HTTP availability responses,
+poll `get_editor_state`, and rediscover `tools/list` after a domain change. A
+manual Dashboard Stop survives reload until Start is pressed; an Editor restart
+starts normally.
 
 ---
 

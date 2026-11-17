@@ -19,6 +19,7 @@ namespace I1rr.UnityMcp.Shared
         private readonly bool _hasTransport;
 
         public string Method { get; }
+        public string OperationId { get; }
         public JToken RequestId => _requestId?.DeepClone();
         public string ProtocolVersion { get; }
         public bool IsModern => ProtocolVersion == McpProtocol.ProtocolVersionModern;
@@ -34,13 +35,14 @@ namespace I1rr.UnityMcp.Shared
 
         public McpRequestContext WithCancellation(CancellationToken cancellation) =>
             new McpRequestContext(Method, _requestId, ProtocolVersion, LegacySessionId, IsInitialized,
-                _capabilities, _clientInfo, TransportInfo, AuthenticatedPrincipal, cancellation);
+                _capabilities, _clientInfo, TransportInfo, AuthenticatedPrincipal, cancellation, OperationId);
 
         internal McpRequestContext(string method, JToken requestId, string protocolVersion,
             string legacySessionId, bool initialized, JObject capabilities, JObject clientInfo,
             McpClientTransportInfo transportInfo, string authenticatedPrincipal,
-            CancellationToken cancellation)
+            CancellationToken cancellation, string operationId = null)
         {
+            OperationId = operationId ?? System.Guid.NewGuid().ToString("N");
             Method = method;
             _requestId = requestId?.DeepClone();
             ProtocolVersion = protocolVersion;

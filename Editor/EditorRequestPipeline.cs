@@ -382,7 +382,9 @@ namespace I1rr.UnityMcp.Editor
                     ["tool_count"] = McpToolRegistry.ToolCount,
                     ["session_count"] = McpProtocol.SessionCount,
                     ["active_sessions"] = McpProtocol.GetSessionIds().Length,
-                    ["clients"] = clients
+                    ["clients"] = clients,
+                    ["modern_activity_count"] = McpRequestActivity.Snapshot().Count,
+                    ["active_request_streams"] = EditorStreamingResponses.Pool.Count
                 };
             }
             else

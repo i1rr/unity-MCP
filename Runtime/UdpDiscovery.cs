@@ -87,7 +87,7 @@ namespace I1rr.UnityMcp.Runtime
             // Do NOT include tokens, token hashes, or other sensitive data
             var serverName = Application.productName ?? "Unknown";
 
-            var json = $"{{\"service\":\"{ServiceName}\",\"port\":{_serverPort},\"protocol\":\"{ProtocolVersion}\",\"name\":\"{EscapeJson(serverName)}\"}}";
+            var json = $"{{\"service\":\"{ServiceName}\",\"port\":{_serverPort},\"protocol\":\"{ProtocolVersion}\",\"protocols\":{Shared.McpProtocol.SupportedVersions.ToString(Newtonsoft.Json.Formatting.None)},\"name\":\"{EscapeJson(serverName)}\"}}";
             _payload = Encoding.UTF8.GetBytes(json);
         }
 

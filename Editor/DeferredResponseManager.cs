@@ -84,9 +84,11 @@ namespace I1rr.UnityMcp.Editor
             McpSseStream stream = null;
             if (requestContext.IsModern)
             {
+                McpRequestActivity.Begin(requestContext, toolName);
                 stream = EditorStreamingResponses.TryOpen(request, headers, requestContext);
                 if (stream == null)
                 {
+                    McpRequestActivity.Finish(requestContext, "not_started");
                     EditorResponseWriter.EnqueueJsonRpcResponse(request, 503, McpProtocol.BuildErrorResponse(id, -32000,
                         "Stream capacity reached", new JObject { ["dispatch_state"] = "not_started" }), headers);
                     return;

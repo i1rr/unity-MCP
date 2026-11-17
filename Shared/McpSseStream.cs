@@ -78,6 +78,8 @@ namespace I1rr.UnityMcp.Shared
         {
             _output = output; _headers = headers; _close = close; _abort = abort; _alive = alive; _finished = finished;
             Context = context.WithCancellation(_cancel.Token);
+            McpRequestActivity.Begin(Context);
+            McpRequestActivity.AttachCancellation(Context, Abort);
             _worker = new Thread(WriteLoop) { IsBackground = true, Name = "MCP-request-stream" };
         }
 
@@ -98,6 +100,8 @@ namespace I1rr.UnityMcp.Shared
         {
             if (Interlocked.CompareExchange(ref _ending, 1, 0) != 0 || Volatile.Read(ref _aborted) != 0) return;
             response = McpProtocol.AdaptResponseForContext(response, Context);
+            McpRequestActivity.Finish(Context, response["error"] != null ? "failed_outcome_unknown" :
+                (bool?)response["result"]?["isError"] == true ? "failed" : "completed");
             var bytes = Encoding.UTF8.GetBytes("event: message\ndata: " + response.ToString(Formatting.None) + "\n\n");
             if (bytes.Length > MaxFrameBytes)
                 bytes = Encoding.UTF8.GetBytes("event: message\ndata: " + McpProtocol.BuildErrorResponse(Context.RequestId,
@@ -171,6 +175,7 @@ namespace I1rr.UnityMcp.Shared
             finally
             {
                 CloseOnce();
+                McpRequestActivity.Finish(Context, Cancellation.IsCancellationRequested ? "cancelled_outcome_unknown" : "completed");
                 Interlocked.Exchange(ref _stopped, 1);
                 _finished();
             }
