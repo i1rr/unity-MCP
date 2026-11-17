@@ -58,7 +58,7 @@ the chat. Script helpers remain useful for scripts and wire diagnostics.
 
 ## Protocol versions and observed clients
 
-Current main supports MCP 2026-07-28 per-request HTTP alongside the existing
+Version 1.1.0 supports MCP 2026-07-28 per-request HTTP alongside the existing
 2025-03-26 and 2025-11-25 initialization paths. Older clients continue to use their
 negotiated sessions. Updating the server does not upgrade a client's protocol.
 

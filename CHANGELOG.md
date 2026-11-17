@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## [1.1.0]
 
 - Capture immutable per-request metadata for ordinary and deferred dispatch, retaining legacy callbacks and session APIs.
 - Share request admission checks and preserve negotiated client capabilities through legacy reload recovery.

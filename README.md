@@ -26,7 +26,7 @@ previews the visible edit in Play Mode; the tutorial saves it in Edit Mode.
 
 Requires Unity 2022.3+. The latest release was exercised on **Windows with Unity
 6000.6.9f1**; the declared minimum and other operating systems are not a claim of
-fresh validation. See the [release evidence](https://github.com/i1rr/unity-MCP/releases/tag/v1.0.3).
+fresh validation. See the [release evidence](https://github.com/i1rr/unity-MCP/releases/tag/v1.1.0).
 
 1. Open **Edit > Project Settings > Package Manager** and add a scoped registry:
 
@@ -52,7 +52,7 @@ exact scope `i1rr-unity-mcp`, then refresh Package Manager. No npm account is ne
 With Git installed, choose **Install package from Git URL** in Package Manager:
 
    ```text
-   https://github.com/i1rr/unity-MCP.git#v1.0.3
+   https://github.com/i1rr/unity-MCP.git#v1.1.0
    ```
 
 Git installs stay on their selected release. To use registry updates, remove the
@@ -60,6 +60,7 @@ Git-installed package and follow the registry installation steps above.
 
 ## Capabilities
 
+- Use MCP 2026-07-28 stateless HTTP or retain existing 2025-era clients.
 - Inspect and edit scenes, GameObjects, components and assets.
 - Run Unity tests and inspect Play Mode and development players.
 - Capture Game View screenshots and video.
