@@ -12,8 +12,15 @@ its subscription or API costs are separate.
 - **Extend:** project-owned C# tools and reusable source modules.
 
 [Connect your client](Documentation~/ConnectYourClient.md) ·
+[Try the workflow demo](Documentation~/WorkflowDemo.md) ·
 [Contribute](CONTRIBUTING.md) ·
 [Report a bug](https://github.com/i1rr/unity-MCP/issues/new?template=bug_report.yml)
+
+![An actual MCP edit in the composited Unity Game View](Documentation~/images/workflow-demo.gif)
+
+The [reproducible demo](Documentation~/WorkflowDemo.md) starts with a failing
+saved-scene test, fixes the crate's transform and reruns the same test. The clip
+previews the visible edit in Play Mode; the tutorial saves it in Edit Mode.
 
 ## Install
 

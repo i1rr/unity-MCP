@@ -1,0 +1,5 @@
+{
+  "name": "WorkflowDemo.Tests",
+  "includePlatforms": ["Editor"],
+  "optionalUnityReferences": ["TestAssemblies"]
+}
