@@ -247,6 +247,40 @@ namespace I1rr.UnityMcp.Editor.Tests
             yield return null;
         }
 
+        [UnityTest] public IEnumerator FractionalBoundsSurviveJsonRoundTripAndNotifyOnce()
+        {
+            const float near = .1234567f, far = 853.3334f;
+            foreach (bool reversed in new[] { false, true })
+            {
+                float low = reversed ? far : near, high = reversed ? near : far;
+                var slider = new Slider(low, high) { name = "fractional-slider-" + reversed };
+                var scroller = new Scroller(low, high, null, SliderDirection.Horizontal) { name = "fractional-scroller-" + reversed };
+                Add(slider); Add(scroller); slider.value = low; scroller.value = low;
+                yield return Settle();
+                int sliderCalls = 0, scrollerCalls = 0;
+                slider.RegisterValueChangedCallback(_ => sliderCalls++);
+                scroller.valueChanged += _ => scrollerCalls++;
+                foreach (var control in new VisualElement[] { slider, scroller })
+                {
+                    foreach (string endpoint in new[] { "maximum", "minimum" })
+                    {
+                        var wire = JObject.Parse(Node(control.name).ToString(Newtonsoft.Json.Formatting.None));
+                        float expected = endpoint == "maximum" ? high : low;
+                        Assert.That((double)wire[endpoint], Is.EqualTo((double)expected), "Inspection must retain the real control bound on the wire.");
+                        for (int repeat = 0; repeat < 2; repeat++)
+                        {
+                            var request = new JObject { ["handle"] = Handle(control.name), ["action"] = "set_value", ["value"] = wire[endpoint] };
+                            Success(UiToolkitTools.Act(JObject.Parse(request.ToString(Newtonsoft.Json.Formatting.None))));
+                        }
+                        Assert.That(control == slider ? slider.value : scroller.value, Is.EqualTo(expected));
+                    }
+                    Refused(Act(Handle(control.name), "set_value", new JValue((double)far + .001)), McpErrorCodes.InvalidParameter);
+                    Refused(Act(Handle(control.name), "set_value", new JValue((double)near - .001)), McpErrorCodes.InvalidParameter);
+                }
+                Assert.That(sliderCalls, Is.EqualTo(2)); Assert.That(scrollerCalls, Is.EqualTo(2));
+            }
+        }
+
         [UnityTest] public IEnumerator PublicScrollerRevealsClippedControlsAndNotifiesOnce()
         {
             var scroll = new ScrollView(ScrollViewMode.Vertical) { name = "scroll" };

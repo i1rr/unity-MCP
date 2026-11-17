@@ -198,7 +198,9 @@ namespace I1rr.UnityMcp.Editor
                 stack.Push(new Frame { Element = child, Depth = f.Depth + 1, Parent = f.Index, Child = -1 });
             }
         }
-        private static float Safe(float v) => float.IsNaN(v) || float.IsInfinity(v) ? 0 : v;
+        // Widen before JSON serialization so clients receive the exact float
+        // bound, rather than a rounded decimal just outside that bound.
+        private static double Safe(float v) => float.IsNaN(v) || float.IsInfinity(v) ? 0 : (double)v;
         private static bool Sensitive(VisualElement e)
         {
             for (int i = 0; e != null && i <= AncestorLimit; i++, e = e.parent)
@@ -324,7 +326,10 @@ namespace I1rr.UnityMcp.Editor
             if (t == typeof(Toggle)) return v.Type == JTokenType.Boolean ? (Action)(() => ((Toggle)e).value = (bool)v) : null;
             bool integer = v.Type == JTokenType.Integer;
             if (!integer && v.Type != JTokenType.Float) return null;
-            if (!double.TryParse(v.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var n) || double.IsNaN(n) || double.IsInfinity(n) || Math.Abs(n) > 1000000) return null;
+            // Numeric tokens already contain their value. Formatting and
+            // reparsing can round an inclusive endpoint outside its float range.
+            double n = (double)v;
+            if (double.IsNaN(n) || double.IsInfinity(n) || Math.Abs(n) > 1000000) return null;
             if (t == typeof(Slider)) { var s = (Slider)e; return n >= Math.Min(s.lowValue, s.highValue) && n <= Math.Max(s.lowValue, s.highValue) ? (Action)(() => s.value = (float)n) : null; }
             if (t == typeof(FloatField)) return () => ((FloatField)e).value = (float)n;
             if (t == typeof(Scroller)) { var s = (Scroller)e; return n >= Math.Min(s.lowValue, s.highValue) && n <= Math.Max(s.lowValue, s.highValue) ? (Action)(() => s.value = (float)n) : null; }

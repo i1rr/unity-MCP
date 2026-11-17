@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.0.3]
+
+- Preserve exact floating UI values and bounds through inspection JSON.
+- Read action values as numeric tokens so inspected inclusive endpoints remain valid.
+- Keep strict finite/range checks and single-use action handles; no client migration is required.
+
 ## [1.0.2]
 
 - Move registry installation to a dedicated Unity registry on GitHub Pages.
