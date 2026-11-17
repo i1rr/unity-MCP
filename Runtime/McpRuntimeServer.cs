@@ -45,11 +45,15 @@ namespace I1rr.UnityMcp.Runtime
 
         // --- Rate Limiting (per IP) ---
         private const int MaxRequestsPerIpPerMinute = 120;
-        private readonly ConcurrentDictionary<string, IpRateLimit> _ipRateLimits =
-            new ConcurrentDictionary<string, IpRateLimit>();
+        private readonly Dictionary<string, IpRateLimit> _ipRateLimits =
+            new Dictionary<string, IpRateLimit>(StringComparer.Ordinal);
+        private readonly object _rateLimitGate = new object();
+        private IpRateLimit[] _rateLimitWindows = Array.Empty<IpRateLimit>();
+        private int _rateLimitWindowCount;
 
         private sealed class IpRateLimit
         {
+            public string ClientIp;
             public int Count;
             public long WindowStartTicks;
         }
@@ -305,17 +309,20 @@ namespace I1rr.UnityMcp.Runtime
                 return;
 
             _lastHeartbeatTime = now;
-
-            // Clean up stale rate limit entries during heartbeat
-            var staleKeys = new List<string>();
-            var nowTicks = DateTime.UtcNow.Ticks;
-            foreach (var kvp in _ipRateLimits)
+            lock (_rateLimitGate)
             {
-                if (nowTicks - Interlocked.Read(ref kvp.Value.WindowStartTicks) > TimeSpan.TicksPerMinute * 5)
-                    staleKeys.Add(kvp.Key);
+                if (_rateLimitWindowCount == 0) return;
+                var nowTicks = DateTime.UtcNow.Ticks;
+                for (int i = _rateLimitWindowCount - 1; i >= 0; i--)
+                {
+                    var window = _rateLimitWindows[i];
+                    if (nowTicks - window.WindowStartTicks <= TimeSpan.TicksPerMinute * 5) continue;
+                    _ipRateLimits.Remove(window.ClientIp);
+                    int last = --_rateLimitWindowCount;
+                    _rateLimitWindows[i] = _rateLimitWindows[last];
+                    _rateLimitWindows[last] = null;
+                }
             }
-            foreach (var key in staleKeys)
-                _ipRateLimits.TryRemove(key, out _);
         }
 
         // --- Configuration ---
@@ -625,24 +632,30 @@ namespace I1rr.UnityMcp.Runtime
 
         private bool CheckRateLimit(string clientIp)
         {
-            var now = DateTime.UtcNow.Ticks;
-            var limit = _ipRateLimits.GetOrAdd(clientIp, _ => new IpRateLimit
+            lock (_rateLimitGate)
             {
-                Count = 0,
-                WindowStartTicks = now
-            });
+                var now = DateTime.UtcNow.Ticks;
+                if (!_ipRateLimits.TryGetValue(clientIp, out var limit))
+                {
+                    if (_rateLimitWindowCount == _rateLimitWindows.Length)
+                        Array.Resize(ref _rateLimitWindows, Math.Max(4, _rateLimitWindowCount * 2));
+                    limit = new IpRateLimit { ClientIp = clientIp, Count = 0, WindowStartTicks = now };
+                    _ipRateLimits.Add(clientIp, limit);
+                    // Grow during request setup. Heartbeats index the dense
+                    // windows without snapshots, enumerators or scratch growth.
+                    _rateLimitWindows[_rateLimitWindowCount++] = limit;
+                }
 
-            // Sliding window: reset after 1 minute
-            const long ticksPerMinute = TimeSpan.TicksPerMinute;
-            if (now - Interlocked.Read(ref limit.WindowStartTicks) > ticksPerMinute)
-            {
-                Interlocked.Exchange(ref limit.WindowStartTicks, now);
-                Interlocked.Exchange(ref limit.Count, 1);
-                return true;
+                // Sliding window: reset after 1 minute.
+                if (now - limit.WindowStartTicks > TimeSpan.TicksPerMinute)
+                {
+                    limit.WindowStartTicks = now;
+                    limit.Count = 1;
+                    return true;
+                }
+
+                return ++limit.Count <= MaxRequestsPerIpPerMinute;
             }
-
-            var count = Interlocked.Increment(ref limit.Count);
-            return count <= MaxRequestsPerIpPerMinute;
         }
 
         private static void RejectClient(TcpClient client, int statusCode, string statusText)

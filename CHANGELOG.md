@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.1.3]
+
+- Publish stream membership snapshots only when requests open or close, eliminating per-frame snapshot allocation in Editor and Development-player maintenance while preserving stable tick views and bounded stream ownership.
+- Scan runtime rate-limit windows without temporary collections. Reserve dense storage during admission and protect admission/expiry together; retain the per-client quota and expiry behavior.
+- Cover first/repeated empty and live stream ticks, callback membership changes, periodic idle/healthy/expiry work and concurrent rate-limit admissions. No protocol or authentication migration is required.
+
 ## [1.1.2]
 
 - Create Windows listening sockets without handle inheritance and clear inheritance on accepted sockets. Import/compiler children can no longer keep stopped MCP listeners bound and unresponsive.

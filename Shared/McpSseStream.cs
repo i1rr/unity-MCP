@@ -17,6 +17,7 @@ namespace I1rr.UnityMcp.Shared
         public const int MaxStreams = 16;
         private readonly ConcurrentDictionary<int, McpSseStream> _streams = new ConcurrentDictionary<int, McpSseStream>();
         private readonly object _gate = new object();
+        private McpSseStream[] _tickSnapshot = Array.Empty<McpSseStream>();
         private int _sequence;
         public int Count => _streams.Count;
 
@@ -28,8 +29,9 @@ namespace I1rr.UnityMcp.Shared
                 if (_streams.Count >= MaxStreams) return null;
                 int key = ++_sequence;
                 var stream = new McpSseStream(output, writeHeaders, close, abort ?? close, alive, context,
-                    () => _streams.TryRemove(key, out _));
+                    () => Remove(key));
                 _streams[key] = stream;
+                PublishSnapshot();
                 stream.Start();
                 return stream;
             }
@@ -37,12 +39,30 @@ namespace I1rr.UnityMcp.Shared
 
         public void Tick()
         {
-            foreach (var stream in _streams.Values) stream.CheckLifetime();
+            // Values allocates a collection snapshot, even for an empty pool.
+            // Keep a stable view without holding membership locks in callbacks.
+            foreach (var stream in Volatile.Read(ref _tickSnapshot)) stream.CheckLifetime();
+        }
+
+        private void Remove(int key)
+        {
+            lock (_gate)
+            {
+                if (_streams.TryRemove(key, out _)) PublishSnapshot();
+            }
+        }
+
+        private void PublishSnapshot()
+        {
+            // Called under _gate only when request membership changes. At most
+            // MaxStreams references are published; old readers keep their view.
+            Volatile.Write(ref _tickSnapshot, _streams.IsEmpty
+                ? Array.Empty<McpSseStream>() : _streams.Values.ToArray());
         }
 
         public void Shutdown(string reason)
         {
-            var streams = _streams.Values.ToArray();
+            var streams = Volatile.Read(ref _tickSnapshot);
             foreach (var stream in streams)
             {
                 stream.CancelWork();

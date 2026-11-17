@@ -102,6 +102,13 @@ transport on macOS or Linux.
 
 ## Compiler/API compatibility
 
+For allocation regressions, calibrate Unity's actual recorder and observe the
+first eligible action without a warm eligible call. Periodic methods run through
+ineligible startup ticks in production; record Mono method/JIT setup separately
+and match that setup before forcing the first due cycle. Use raw stacks to
+distinguish VM initialization from the method body. Retain native first-action
+coverage, live callbacks, membership/expiry changes and concurrency checks.
+
 Unity 2022.3 remains the declared minimum. Shared compatibility helpers select
 Unity-managed assembly enumeration/paths and unsorted queries on 6000.6+, with
 compile-time older-API branches below that version. NamedBuildTarget player and
