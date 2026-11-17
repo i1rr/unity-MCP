@@ -21,6 +21,7 @@ namespace I1rr.UnityMcp.Shared
         public string Method { get; }
         public JToken RequestId => _requestId?.DeepClone();
         public string ProtocolVersion { get; }
+        public bool IsModern => ProtocolVersion == McpProtocol.ProtocolVersionModern;
         public string LegacySessionId { get; }
         public bool IsInitialized { get; }
         public bool IsNotification => _requestId == null;

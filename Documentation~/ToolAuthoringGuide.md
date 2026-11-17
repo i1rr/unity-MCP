@@ -72,6 +72,20 @@ Guidelines:
 - Use `"default"` values where sensible.
 - Supported types: `string`, `integer`, `number`, `boolean`, `array`, `object`.
 
+The experimental 2026-07-28 HTTP path also validates `x-mcp-header` annotations.
+Use unique HTTP token names on string, boolean or JavaScript-safe integer
+properties reached only through `properties`. Arrays, composition and references
+cannot carry these annotations. Modern catalogs exclude invalid definitions;
+calls reject mismatched headers before dispatch. Legacy schemas are unchanged.
+No current built-in tool requires a custom parameter header.
+
+Modern requests carry their version and client capabilities in `params._meta`
+and mirror version, method and applicable tool name/resource URI into HTTP
+headers. They need no initialization or session header. The host adds modern
+result envelopes to both immediate and deferred tools; tools should continue
+returning ordinary content. Until streaming/cancellation support is complete,
+this path is experimental and does not establish full modern conformance.
+
 ---
 
 ## Parameter Extraction

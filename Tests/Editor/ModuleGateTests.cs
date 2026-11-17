@@ -97,5 +97,35 @@ namespace I1rr.UnityMcp.Editor.Tests
             Assert.That(Listed(), Is.False);
             Assert.That(McpToolRegistry.Invoke(ToolName, new JObject())["error"], Is.Not.Null);
         }
+
+        [Test] public void ModernCatalogReflectsPolicyChangeAndDisabledToolCannotExecute()
+        {
+            var savedList = McpProtocol.OnToolsList;
+            var savedCall = McpProtocol.OnToolsCall;
+            try
+            {
+                McpProtocol.OnToolsList = (_, __) => new JObject { ["tools"] = McpToolRegistry.ListTools() };
+                McpProtocol.OnToolsCall = (_, __) => McpToolRegistry.Invoke(ToolName, new JObject());
+                JObject Dispatch(JObject request) => McpProtocol.ProcessRequestWithContext(request,
+                    McpProtocol.CreateModernRequestContext(request), out _);
+                var list = McpModernProtocolTests.Request("tools/list");
+                Assert.That(Dispatch(list)["result"]["tools"].Any(t => (string)t["name"] == ToolName), Is.True);
+                int calls = _calls;
+                McpToolRegistry.ModuleEnabled = id => id != "GateFixture";
+                McpToolRegistry.NotifyCatalogChanged();
+                var result = Dispatch(list);
+                Assert.That(result["result"]["tools"].Any(t => (string)t["name"] == ToolName), Is.False);
+                Assert.That((int)result["result"]["ttlMs"], Is.Zero);
+                var call = McpModernProtocolTests.Request("tools/call");
+                call["params"]["name"] = ToolName;
+                Assert.That((bool)Dispatch(call)["result"]["isError"], Is.True);
+                Assert.That(_calls, Is.EqualTo(calls));
+            }
+            finally
+            {
+                McpProtocol.OnToolsList = savedList;
+                McpProtocol.OnToolsCall = savedCall;
+            }
+        }
     }
 }

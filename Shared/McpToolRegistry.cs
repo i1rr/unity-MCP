@@ -82,6 +82,16 @@ namespace I1rr.UnityMcp.Shared
             return ListTools(null);
         }
 
+        // Use the advertised schema, including canonical auto-route names. Invocation still
+        // rechecks availability and permissions; headers never grant tool access.
+        internal static JObject InputSchemaForHeaders(string name)
+        {
+            EnsureInitialized();
+            lock (_lock)
+                return name != null && _tools.TryGetValue(name, out var entry) && IsExposed(entry)
+                    ? (JObject)entry.InputSchema.DeepClone() : null;
+        }
+
         /// <summary>
         /// Returns registered tools formatted as an MCP tools/list response array,
         /// optionally filtered by category. Pass null to return all tools.

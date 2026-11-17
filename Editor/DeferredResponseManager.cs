@@ -39,22 +39,25 @@ namespace I1rr.UnityMcp.Editor
         // --- Deferred Tool Call Handling ---
 
         internal static void HandleDeferredToolCall(McpEditorServer.McpRequest request, JObject jsonRpcReq,
-            string toolName, JObject paramsObj, Dictionary<string, string> headers, string sessionId)
+            string toolName, JObject paramsObj, Dictionary<string, string> headers, string sessionId,
+            McpRequestContext requestContext = null)
         {
             var id = jsonRpcReq["id"];
 
-            var requestContext = McpProtocol.CreateLegacyRequestContext(jsonRpcReq, sessionId);
+            requestContext = requestContext ?? McpProtocol.CreateLegacyRequestContext(jsonRpcReq, sessionId);
             var validationError = McpProtocol.ValidateRequestForDispatch(jsonRpcReq, requestContext);
             if (validationError != null)
             {
-                EditorResponseWriter.EnqueueJsonRpcResponse(request, 200, validationError, headers);
+                EditorResponseWriter.EnqueueJsonRpcResponse(request,
+                    requestContext.IsModern ? McpProtocol.ModernHttpStatus(validationError) : 200, validationError, headers);
                 return;
             }
 
             if (_deferredResponses.Count >= MaxDeferredTotal)
             {
                 var errResp = McpProtocol.BuildErrorResponse(id, -32000, "Too many concurrent deferred requests");
-                EditorResponseWriter.EnqueueJsonRpcResponse(request, 200, errResp, headers);
+                EditorResponseWriter.EnqueueJsonRpcResponse(request,
+                    requestContext.IsModern ? McpProtocol.ModernHttpStatus(errResp) : 200, errResp, headers);
                 return;
             }
 
@@ -69,7 +72,8 @@ namespace I1rr.UnityMcp.Editor
             {
                 var errResp = McpProtocol.BuildErrorResponse(id, -32000,
                     "Too many deferred requests on this connection. Wait for existing deferred calls to complete.");
-                EditorResponseWriter.EnqueueJsonRpcResponse(request, 200, errResp, headers);
+                EditorResponseWriter.EnqueueJsonRpcResponse(request,
+                    requestContext.IsModern ? McpProtocol.ModernHttpStatus(errResp) : 200, errResp, headers);
                 return;
             }
 
@@ -110,7 +114,7 @@ namespace I1rr.UnityMcp.Editor
             {
                 var toolResponse = rawResult as JObject ?? new JObject { ["result"] = "ok" };
                 var wrapped = McpProtocol.WrapToolResult(toolResponse);
-                var jsonRpcResp = McpProtocol.BuildResponse(id, wrapped);
+                var jsonRpcResp = McpProtocol.AdaptResponseForContext(McpProtocol.BuildResponse(id, wrapped), requestContext);
                 EditorResponseWriter.EnqueueJsonRpcResponse(request, 200, jsonRpcResp, headers);
                 McpProtocol.CompleteDeferredRequest(sessionId, wrapped["isError"]?.Value<bool>() == true);
             }
@@ -280,6 +284,8 @@ namespace I1rr.UnityMcp.Editor
 
         private static void SendDeferredResponse(PendingDeferredResponse pending, int statusCode, JObject response)
         {
+            response = McpProtocol.AdaptResponseForContext(response, pending.Deferred.RequestContext);
+            if (pending.Deferred.RequestContext?.IsModern == true) statusCode = McpProtocol.ModernHttpStatus(response);
             var isError = response?["error"] != null || response?["result"]?["isError"]?.Value<bool>() == true;
             McpProtocol.CompleteDeferredRequest(pending.SessionId, isError);
             var responseBytes = Encoding.UTF8.GetBytes(response.ToString(Formatting.None));

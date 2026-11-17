@@ -704,7 +704,7 @@ namespace I1rr.UnityMcp.Runtime
             var headers = new Dictionary<string, string>
             {
                 ["Access-Control-Allow-Methods"] = "POST, DELETE, OPTIONS",
-                ["Access-Control-Allow-Headers"] = "Content-Type, Authorization, MCP-Session-Id, MCP-Protocol-Version",
+                ["Access-Control-Allow-Headers"] = McpModernHttp.CorsAllowedHeaders(httpReq.Headers),
                 ["Access-Control-Max-Age"] = "86400"
             };
 
@@ -813,6 +813,43 @@ namespace I1rr.UnityMcp.Runtime
             if (!McpAuth.ValidateAuthorizationHeader(authHeader, _authToken))
             {
                 SendJsonError(client, 401, "Unauthorized", responseHeaders);
+                return;
+            }
+
+            if (McpModernHttp.IsModernRequest(httpReq.Headers, httpReq.Body))
+            {
+                httpReq.Headers.TryGetValue("Content-Type", out var modernContentType);
+                if (!McpAuth.ValidateContentType(modernContentType))
+                {
+                    SendJsonRpcResponse(client, McpProtocol.BuildErrorResponse(null,
+                        McpProtocol.ErrorInvalidRequest, "Expected application/json"), responseHeaders, statusCode: 415);
+                    return;
+                }
+                httpReq.Headers.TryGetValue("User-Agent", out var modernAgent);
+                var modernTransport = new McpClientTransportInfo
+                {
+                    UserAgent = modernAgent,
+                    RemoteAddress = (client.Client.RemoteEndPoint as IPEndPoint)?.Address?.ToString()
+                };
+                if (!McpModernHttp.TryPrepare(httpReq.Headers, httpReq.Body, modernTransport,
+                    out var modernRequest, out var context, out var error, out var status))
+                {
+                    SendJsonRpcResponse(client, error, responseHeaders, statusCode: status);
+                    return;
+                }
+                if (!context.IsNotification && context.Method == McpProtocol.MethodToolsCall)
+                {
+                    var parameters = (JObject)modernRequest["params"];
+                    var name = (string)parameters["name"];
+                    if (McpToolRegistry.IsDeferredTool(name))
+                    {
+                        HandleDeferredToolCall(client, modernRequest, name, parameters, responseHeaders, null, context);
+                        return;
+                    }
+                }
+                var modernResponse = McpProtocol.ProcessRequestWithContext(modernRequest, context, out _);
+                if (context.IsNotification) SendResponse(client, 202, "Accepted", responseHeaders, null);
+                else SendJsonRpcResponse(client, modernResponse, responseHeaders, context);
                 return;
             }
 
@@ -941,16 +978,17 @@ namespace I1rr.UnityMcp.Runtime
         // --- Deferred Tool Call Handling ---
 
         private void HandleDeferredToolCall(TcpClient client, JObject request,
-            string toolName, JObject paramsObj, Dictionary<string, string> headers, string sessionId)
+            string toolName, JObject paramsObj, Dictionary<string, string> headers, string sessionId,
+            McpRequestContext requestContext = null)
         {
             var id = request["id"];
 
             // Validate JSON-RPC structure
-            var requestContext = McpProtocol.CreateLegacyRequestContext(request, sessionId);
+            requestContext = requestContext ?? McpProtocol.CreateLegacyRequestContext(request, sessionId);
             var validationError = McpProtocol.ValidateRequestForDispatch(request, requestContext);
             if (validationError != null)
             {
-                SendJsonRpcResponse(client, validationError, headers);
+                SendJsonRpcResponse(client, validationError, headers, requestContext);
                 return;
             }
 
@@ -958,7 +996,7 @@ namespace I1rr.UnityMcp.Runtime
             if (_deferredResponses.Count >= MaxDeferredTotal)
             {
                 var errResp = McpProtocol.BuildErrorResponse(id, -32000, "Too many concurrent deferred requests");
-                SendJsonRpcResponse(client, errResp, headers);
+                SendJsonRpcResponse(client, errResp, headers, requestContext);
                 return;
             }
 
@@ -974,7 +1012,7 @@ namespace I1rr.UnityMcp.Runtime
             {
                 var errResp = McpProtocol.BuildErrorResponse(id, -32000,
                     "Too many deferred requests on this connection. Wait for existing deferred calls to complete.");
-                SendJsonRpcResponse(client, errResp, headers);
+                SendJsonRpcResponse(client, errResp, headers, requestContext);
                 return;
             }
 
@@ -1023,7 +1061,7 @@ namespace I1rr.UnityMcp.Runtime
                 var toolResponse = rawResult as JObject ?? new JObject { ["result"] = "ok" };
                 var wrapped = McpProtocol.WrapToolResult(toolResponse);
                 var jsonRpcResp = McpProtocol.BuildResponse(id, wrapped);
-                SendJsonRpcResponse(client, jsonRpcResp, headers);
+                SendJsonRpcResponse(client, jsonRpcResp, headers, requestContext);
                 McpProtocol.CompleteDeferredRequest(sessionId, wrapped["isError"]?.Value<bool>() == true);
             }
         }
@@ -1043,7 +1081,7 @@ namespace I1rr.UnityMcp.Runtime
                 {
                     pending.Deferred.InvokeCleanup();
                     var errResp = McpProtocol.BuildErrorResponse(pending.RequestId, -32000, "Session terminated");
-                    SendJsonRpcResponse(pending.Client, errResp, pending.Headers);
+                    SendJsonRpcResponse(pending.Client, errResp, pending.Headers, pending.Deferred.RequestContext);
                     _deferredResponses.RemoveAt(i);
                     continue;
                 }
@@ -1065,7 +1103,7 @@ namespace I1rr.UnityMcp.Runtime
                     pending.Deferred.InvokeCleanup();
                     var errResp = McpProtocol.BuildErrorResponse(pending.RequestId, -32000,
                         "Deferred request timed out");
-                    SendJsonRpcResponse(pending.Client, errResp, pending.Headers);
+                    SendJsonRpcResponse(pending.Client, errResp, pending.Headers, pending.Deferred.RequestContext);
                     McpProtocol.CompleteDeferredRequest(pending.SessionId, true);
                     _deferredResponses.RemoveAt(i);
                     continue;
@@ -1091,7 +1129,7 @@ namespace I1rr.UnityMcp.Runtime
                         toolResult = ResponseSizeLimiter.Apply(toolResult);
                         var wrapped = McpProtocol.WrapToolResult(toolResult);
                         var jsonRpcResp = McpProtocol.BuildResponse(pending.RequestId, wrapped);
-                        SendJsonRpcResponse(pending.Client, jsonRpcResp, pending.Headers);
+                        SendJsonRpcResponse(pending.Client, jsonRpcResp, pending.Headers, pending.Deferred.RequestContext);
                         McpProtocol.CompleteDeferredRequest(pending.SessionId,
                             wrapped["isError"]?.Value<bool>() == true);
                         pending.Deferred.InvokeCleanup();
@@ -1104,7 +1142,7 @@ namespace I1rr.UnityMcp.Runtime
                     pending.Deferred.InvokeCleanup();
                     var errResp = McpProtocol.BuildErrorResponse(pending.RequestId, -32000,
                         $"Deferred predicate error: {ex.Message}");
-                    SendJsonRpcResponse(pending.Client, errResp, pending.Headers);
+                    SendJsonRpcResponse(pending.Client, errResp, pending.Headers, pending.Deferred.RequestContext);
                     McpProtocol.CompleteDeferredRequest(pending.SessionId, true);
                     _deferredResponses.RemoveAt(i);
                 }
@@ -1138,11 +1176,14 @@ namespace I1rr.UnityMcp.Runtime
             }
         }
 
-        private void SendJsonRpcResponse(TcpClient client, JObject response, Dictionary<string, string> headers)
+        private void SendJsonRpcResponse(TcpClient client, JObject response, Dictionary<string, string> headers,
+            McpRequestContext context = null, int statusCode = 200)
         {
+            response = McpProtocol.AdaptResponseForContext(response, context);
+            if (context?.IsModern == true) statusCode = McpProtocol.ModernHttpStatus(response);
             headers["Content-Type"] = "application/json";
             var body = Encoding.UTF8.GetBytes(response.ToString(Formatting.None));
-            SendResponse(client, 200, "OK", headers, body);
+            SendResponse(client, statusCode, statusCode == 200 ? "OK" : "Request Error", headers, body);
         }
 
 

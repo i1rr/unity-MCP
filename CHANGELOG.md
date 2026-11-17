@@ -4,6 +4,7 @@
 
 - Capture immutable per-request metadata for ordinary and deferred dispatch, retaining legacy callbacks and session APIs.
 - Share request admission checks and preserve negotiated client capabilities through legacy reload recovery.
+- Add experimental MCP 2026-07-28 ordinary HTTP dispatch without legacy sessions in Editor and runtime, with metadata/header admission, discovery, deterministic catalogs and modern envelopes. Streaming lifetimes remain a prerequisite for release.
 
 ## [1.0.3]
 

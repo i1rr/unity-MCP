@@ -400,7 +400,7 @@ namespace I1rr.UnityMcp.Editor
             var headers = new Dictionary<string, string>
             {
                 ["Access-Control-Allow-Methods"] = "GET, POST, DELETE",
-                ["Access-Control-Allow-Headers"] = "Content-Type, Authorization, MCP-Session-Id, MCP-Protocol-Version",
+                ["Access-Control-Allow-Headers"] = McpModernHttp.CorsAllowedHeaders(request.HttpRequest.Headers),
                 ["Access-Control-Max-Age"] = "86400"
             };
 
@@ -488,6 +488,40 @@ namespace I1rr.UnityMcp.Editor
             {
                 EditorResponseWriter.EnqueueResponse(request, 401, "Unauthorized",
                     EditorResponseWriter.BuildJsonError("Unauthorized"), headers);
+                return;
+            }
+
+            // Modern requests carry their own metadata and never consult the legacy session table.
+            if (McpModernHttp.IsModernRequest(httpReq.Headers, httpReq.Body))
+            {
+                httpReq.Headers.TryGetValue("Content-Type", out var modernContentType);
+                if (!McpAuth.ValidateContentType(modernContentType))
+                {
+                    EditorResponseWriter.EnqueueJsonRpcResponse(request, 415,
+                        McpProtocol.BuildErrorResponse(null, McpProtocol.ErrorInvalidRequest, "Expected application/json"), headers);
+                    return;
+                }
+                if (!McpModernHttp.TryPrepare(httpReq.Headers, httpReq.Body, BuildClientTransportInfo(request),
+                    out var modernRequest, out var context, out var error, out var status))
+                {
+                    EditorResponseWriter.EnqueueJsonRpcResponse(request, status, error, headers);
+                    return;
+                }
+                if (!context.IsNotification && context.Method == McpProtocol.MethodToolsCall)
+                {
+                    var parameters = (JObject)modernRequest["params"];
+                    var name = (string)parameters["name"];
+                    if (McpToolRegistry.IsDeferredTool(name))
+                    {
+                        DeferredResponseManager.HandleDeferredToolCall(request, modernRequest, name, parameters, headers, null, context);
+                        return;
+                    }
+                }
+                var modernResponse = McpProtocol.ProcessRequestWithContext(modernRequest, context, out _);
+                if (context.IsNotification)
+                    EditorResponseWriter.EnqueueResponse(request, 202, "Accepted", null, headers);
+                else
+                    EditorResponseWriter.EnqueueJsonRpcResponse(request, McpProtocol.ModernHttpStatus(modernResponse), modernResponse, headers);
                 return;
             }
 

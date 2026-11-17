@@ -62,7 +62,7 @@ namespace I1rr.UnityMcp.Shared
     /// Supports multiple concurrent client sessions keyed by session ID.
     /// Does not handle HTTP transport directly.
     /// </summary>
-    public static class McpProtocol
+    public static partial class McpProtocol
     {
         // Protocol versions
         public const string ProtocolVersionBaseline = "2025-03-26";
@@ -655,6 +655,7 @@ namespace I1rr.UnityMcp.Shared
             var method = (string)request["method"];
             if (context.Method != method || !JToken.DeepEquals(context.RequestId, id))
                 return BuildErrorResponse(id, ErrorInvalidRequest, "Request context does not match this request");
+            if (context.IsModern) return ValidateModernEnvelope(request, context);
             if (!context.IsInitialized && method != MethodInitialize && method != NotificationInitialized)
                 return BuildErrorResponse(id, ErrorServerNotInitialized, "Server not initialized");
             return null;
@@ -672,6 +673,7 @@ namespace I1rr.UnityMcp.Shared
                 return validationError;
 
             if (context == null) throw new ArgumentNullException(nameof(context));
+            if (context.IsModern) return ProcessModernRequest(request, context);
             var sessionId = context.LegacySessionId;
             var transportInfo = context.TransportInfo;
 
