@@ -59,6 +59,20 @@ On Windows, the native socket tests take the shipped DLL as their argument:
 python native-socket-tests.py ../Editor/Plugins/Windows/x86_64/mcpkeeper.dll
 ```
 
+For native-provider or package-lifecycle changes, also run
+`NativeKeeperMigrationTests`. It loads isolated copies of the shipped DLL and
+exercises real sockets, retained handles, staged replies, multiple stale providers
+and invalid ABI rejection. Those owned test modules remain resident until process
+exit; their listeners are stopped after each case.
+
+Verify live UPM file-to-archive and registry-version changes in one graphical
+Windows Editor process. Record the PID, original endpoint, physical provider and
+owned listeners before/after each transition; require one healthy MCP listener,
+the expected new managed assembly/package and direct native-client calls. Exercise
+an interrupted deferred reply/subscription, single cleanup, preserved legacy
+session/auth settings and ordinary same-path reload. A clean install or a restart
+workaround cannot establish live upgrade recovery.
+
 ## Release checks
 
 From the repository root, use `python Tools~/test_install.py --unity <editor>

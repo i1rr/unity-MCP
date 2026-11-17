@@ -2,6 +2,24 @@
 
 Guide for AI agents integrating with the i1rr-unity-mcp server in Unity.
 
+## Windows package upgrades
+
+From 1.1.1, the incoming Editor package binds its own physical socket-keeper DLL
+and retires running keepers left at earlier UPM paths. Live upgrades into this
+version, and transitions between versions containing this fix, do not require an
+Editor restart. The replacement prefers the previous owned port when available;
+verify the responding package/assembly and actual endpoint after resolution.
+Ordinary managed reloads keep their existing listener and legacy sessions.
+Windows can keep inactive native modules resident until Editor exit; one healthy
+MCP listener is the acceptance check, not one loaded DLL.
+
+Unity still interrupts requests during compilation/reload. Wait for readiness,
+inspect explicit job IDs and distinguish pre-dispatch rejection from an unknown
+mutation outcome. Do not blindly replay calls after losing their replies. A
+downgrade to an older package removes this handover code: close the Editor first
+when rolling back to a version before 1.1.1. An unrelated process occupying the
+previous port can still require a new endpoint and client reconnection.
+
 ## Optional local MCP issue logging
 
 In the Dashboard's Settings tab, **Enable MCP issue logging** adds a marked,

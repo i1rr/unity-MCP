@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.1.1]
+
+- Bind the Windows socket keeper to the installed package's physical DLL, rather than an ambiguous DLL basename after UPM changes its cache path.
+- Retire detached keepers from previous package paths before binding the replacement, preferring their recorded endpoint when available. Preserve same-path managed reloads, legacy sessions and staged request outcomes.
+- Verify physical-DLL handover, stale-provider cleanup and interrupted requests; resident native modules are not forcibly unloaded.
+
 ## [1.1.0]
 
 - Capture immutable per-request metadata for ordinary and deferred dispatch, retaining legacy callbacks and session APIs.

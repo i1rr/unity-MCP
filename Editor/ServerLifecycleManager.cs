@@ -333,6 +333,12 @@ namespace I1rr.UnityMcp.Editor
 
         private static void StartNativeTransport()
         {
+            // A UPM path change may load a second physical DLL while the previous one
+            // still owns its detached listener. Retire it before selecting/binding a port.
+            int.TryParse(File.Exists(Path.Combine(McpEditorServer._libraryPath, PortFileName))
+                ? File.ReadAllText(Path.Combine(McpEditorServer._libraryPath, PortFileName)) : null,
+                out int previousPort);
+            int migratedPort = NativeSocketKeeper.PrepareForStart(previousPort);
             if (NativeSocketKeeper.IsRunning)
             {
                 // Domain reload recovery — native socket is already listening
@@ -342,7 +348,8 @@ namespace I1rr.UnityMcp.Editor
             else
             {
                 // Fresh start — select port and start native listener
-                McpEditorServer._port = SelectPort();
+                McpEditorServer._port = migratedPort > 0 && IsPortAvailable(migratedPort)
+                    ? migratedPort : SelectPort();
                 if (!NativeSocketKeeper.Start(McpEditorServer._port))
                 {
                     // Native start failed — fall back to HttpListener

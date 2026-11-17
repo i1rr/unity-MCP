@@ -1,61 +1,48 @@
 using System;
-using System.Runtime.InteropServices;
+using System.IO;
 using UnityEngine;
 
 namespace I1rr.UnityMcp.Editor
 {
     /// <summary>
-    /// P/Invoke wrapper for mcpkeeper.dll — a native socket keeper that holds the
+    /// Bound native provider for mcpkeeper.dll — a socket keeper that holds the
     /// TCP listening socket alive across Unity domain reloads. When C# is detached
     /// during reload, the native layer sends HTTP 503 + Retry-After to all clients.
     /// </summary>
     internal static class NativeSocketKeeper
     {
-        private const string DllName = "mcpkeeper";
-
         private static bool _available = true;
         private static bool _checkedAvailability;
+        private static NativeKeeperModule _module;
+        internal static string ProviderPath => _module?.Path;
 
-        // --- Native imports ---
+        // --- Calls on the selected physical module ---
 
-        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-        private static extern int mcpkeeper_start(int port);
+        private static int mcpkeeper_start(int port) => _module.Start(port);
 
-        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-        private static extern int mcpkeeper_is_running();
+        private static int mcpkeeper_is_running() => _module.IsRunning();
 
-        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-        private static extern int mcpkeeper_get_port();
+        private static int mcpkeeper_get_port() => _module.GetPort();
 
-        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-        private static extern void mcpkeeper_attach();
+        private static void mcpkeeper_attach() => _module.Attach();
 
-        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-        private static extern void mcpkeeper_detach();
+        private static void mcpkeeper_detach() => _module.Detach();
 
-        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-        private static extern int mcpkeeper_dequeue(int timeout_ms);
+        private static int mcpkeeper_dequeue(int timeout_ms) => _module.Dequeue(timeout_ms);
 
-        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-        private static extern int mcpkeeper_recv(int client_id, byte[] buf, int len);
+        private static int mcpkeeper_recv(int client_id, byte[] buf, int len) => _module.Recv(client_id, buf, len);
 
-        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-        private static extern int mcpkeeper_send(int client_id, byte[] buf, int len);
+        private static int mcpkeeper_send(int client_id, byte[] buf, int len) => _module.Send(client_id, buf, len);
 
-        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-        private static extern int mcpkeeper_is_client_connected(int client_id);
+        private static int mcpkeeper_is_client_connected(int client_id) => _module.IsClientConnected(client_id);
 
-        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-        private static extern void mcpkeeper_close_client(int client_id);
+        private static void mcpkeeper_close_client(int client_id) => _module.CloseClient(client_id);
 
-        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-        private static extern void mcpkeeper_stage_response(int client_id, byte[] data, int len);
+        private static void mcpkeeper_stage_response(int client_id, byte[] data, int len) => _module.StageResponse(client_id, data, len);
 
-        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-        private static extern void mcpkeeper_flush_staged();
+        private static void mcpkeeper_flush_staged() => _module.FlushStaged();
 
-        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-        private static extern void mcpkeeper_stop();
+        private static void mcpkeeper_stop() => _module.Stop();
 
         // --- Public API ---
 
@@ -70,8 +57,13 @@ namespace I1rr.UnityMcp.Editor
                 if (!_checkedAvailability)
                 {
                     _checkedAvailability = true;
+#if UNITY_EDITOR_WIN
                     try
                     {
+                        var package = UnityEditor.PackageManager.PackageInfo.FindForAssembly(typeof(NativeSocketKeeper).Assembly);
+                        if (package == null) throw new DllNotFoundException("Package path is unavailable.");
+                        _module = NativeKeeperModule.Open(Path.Combine(package.resolvedPath,
+                            "Editor", "Plugins", "Windows", "x86_64", "mcpkeeper.dll"));
                         mcpkeeper_is_running();
                     }
                     catch (DllNotFoundException)
@@ -84,6 +76,9 @@ namespace I1rr.UnityMcp.Editor
                         _available = false;
                         Debug.LogWarning("[MCP] mcpkeeper.dll version mismatch — domain reload resilience unavailable.");
                     }
+#else
+                    _available = false;
+#endif
                 }
                 return _available;
             }
@@ -93,6 +88,9 @@ namespace I1rr.UnityMcp.Editor
         /// Whether the native socket is currently listening (survives domain reload).
         /// </summary>
         public static bool IsRunning => IsAvailable && mcpkeeper_is_running() == 1;
+
+        internal static int PrepareForStart(int previousPort) =>
+            _module.RetirePreviousProviders(NativeKeeperModule.LoadedPackagePaths(), previousPort);
 
         /// <summary>
         /// Returns the port the native socket is bound to.
