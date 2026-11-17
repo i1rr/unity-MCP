@@ -14,6 +14,7 @@ __pycache__/
 # Local client configuration can contain credentials
 .mcp.json
 .vscode/mcp.json
+.cursor/mcp.json
 .claude/settings.local.json
 .npmrc
 node_modules/

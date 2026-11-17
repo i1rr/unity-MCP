@@ -1,0 +1,36 @@
+name: Bug report
+description: Report a reproducible MCP failure in a small Unity project.
+body:
+  - type: input
+    id: versions
+    attributes:
+      label: Package, Unity and operating system versions
+      placeholder: "MCP 1.0.3; Unity 6000.6.9f1; Windows 11"
+    validations:
+      required: true
+  - type: input
+    id: client
+    attributes:
+      label: AI client, version and connection transport
+      placeholder: "Client/version; local HTTP"
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Smallest reproduction
+      description: Include exact tool names/arguments and steps in a disposable project. Remove tokens and private project data.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual behavior
+      description: Include errors and whether the tool may have completed after a timeout.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence and workaround
+      description: Attach sanitized logs/images or a small reproduction. Say what worked and what remains broken.

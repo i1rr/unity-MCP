@@ -1,0 +1,17 @@
+name: Workflow or compatibility report
+description: Suggest a focused workflow or share a tested client/Unity/OS combination.
+body:
+  - type: textarea
+    id: workflow
+    attributes:
+      label: Workflow or environment
+      description: What are you trying to accomplish? For compatibility reports, include package, Unity, client and OS versions.
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: Observed result and proposed improvement
+      description: Describe actual install/handshake/edit/capture results, a workaround, or a small proposed change with its completion check.
+    validations:
+      required: true

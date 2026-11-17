@@ -1,0 +1,3 @@
+# GitHub forms are repository metadata, not part of the Unity release archive.
+/.github export-ignore
+/.gitattributes export-ignore
