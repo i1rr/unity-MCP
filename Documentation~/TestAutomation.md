@@ -59,6 +59,11 @@ On Windows, the native socket tests take the shipped DLL as their argument:
 python native-socket-tests.py ../Editor/Plugins/Windows/x86_64/mcpkeeper.dll
 ```
 
+The child-process regression deliberately enables handle inheritance and keeps the
+owned child alive while stopping/rebinding the listener. The previous DLL fails
+with an occupied port even though its running flag is zero. Do not replace this
+case with a child whose launcher already prevents handle inheritance.
+
 For native-provider or package-lifecycle changes, also run
 `NativeKeeperMigrationTests`. It loads isolated copies of the shipped DLL and
 exercises real sockets, retained handles, staged replies, multiple stale providers

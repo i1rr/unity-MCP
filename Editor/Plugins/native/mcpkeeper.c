@@ -160,6 +160,7 @@ static DWORD WINAPI AcceptLoop(LPVOID parameter)
         if (select(0,&reads,NULL,NULL,&wait) <= 0) continue;
         SOCKET s = accept(listen_socket,NULL,NULL);
         if (s == INVALID_SOCKET) continue;
+        if (!SetHandleInformation((HANDLE)s, HANDLE_FLAG_INHERIT, 0)) { closesocket(s); continue; }
         int yes=1; DWORD receive_timeout=5000, send_timeout=100;
         setsockopt(s,IPPROTO_TCP,TCP_NODELAY,(const char*)&yes,sizeof(yes));
         setsockopt(s,SOL_SOCKET,SO_RCVTIMEO,(const char*)&receive_timeout,sizeof(receive_timeout));
@@ -187,7 +188,11 @@ API int __cdecl mcpkeeper_start(int port)
     if (!InitOnceExecuteOnce(&once,Initialize,NULL,NULL)) return -1;
     if (InterlockedCompareExchange(&running,0,0)) return 0;
     if (port < 1 || port > 65535) return -2;
-    SOCKET s=socket(AF_INET,SOCK_STREAM,IPPROTO_TCP);
+    /* Unity spawns import/compiler children. An inherited listener stays bound even
+     * after this provider stops, with no accept thread to service it. Disable
+     * inheritance atomically at creation, before any child can duplicate it. */
+    SOCKET s=WSASocketW(AF_INET,SOCK_STREAM,IPPROTO_TCP,NULL,0,
+        WSA_FLAG_OVERLAPPED | WSA_FLAG_NO_HANDLE_INHERIT);
     if (s == INVALID_SOCKET) return -3;
     int exclusive=1;
     setsockopt(s,SOL_SOCKET,SO_EXCLUSIVEADDRUSE,(const char*)&exclusive,sizeof(exclusive));

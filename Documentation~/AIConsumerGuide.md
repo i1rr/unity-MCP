@@ -13,6 +13,14 @@ Ordinary managed reloads keep their existing listener and legacy sessions.
 Windows can keep inactive native modules resident until Editor exit; one healthy
 MCP listener is the acceptance check, not one loaded DLL.
 
+Use 1.1.2 or newer for the complete fix: older native DLLs allowed child processes
+to inherit the listening socket. A child can then keep a stopped keeper's port
+bound without any thread servicing requests. Version 1.1.2 prevents inheritance
+when creating sockets. Existing inherited handles cannot be revoked by a package
+upgrade; a legacy affected Editor can require one-time cleanup of its confirmed
+idle child workers. Keep that recovery separate from live-upgrade acceptance with
+non-inheritable listeners, and never terminate unrelated Editor processes.
+
 Unity still interrupts requests during compilation/reload. Wait for readiness,
 inspect explicit job IDs and distinguish pre-dispatch rejection from an unknown
 mutation outcome. Do not blindly replay calls after losing their replies. A

@@ -67,7 +67,7 @@ namespace I1rr.UnityMcp.Shared
         // Protocol versions
         public const string ProtocolVersionBaseline = "2025-03-26";
         public const string ProtocolVersionNext = "2025-11-25";
-        public const string ServerVersion = "1.1.1";
+        public const string ServerVersion = "1.1.2";
 
         // JSON-RPC error codes
         public const int ErrorParseError = -32700;

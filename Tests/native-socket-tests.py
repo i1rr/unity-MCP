@@ -1,4 +1,4 @@
-import ctypes, socket, time, json, sys, unittest, threading
+import ctypes, socket, time, json, sys, unittest, threading, subprocess
 lib=ctypes.CDLL(sys.argv.pop(1))
 class KeeperTests(unittest.TestCase):
     def setUp(self):
@@ -39,6 +39,17 @@ class KeeperTests(unittest.TestCase):
         lib.mcpkeeper_attach()
         with self.connect() as s:
             handle=lib.mcpkeeper_dequeue(1000); self.assertGreaterEqual(handle,0); lib.mcpkeeper_close_client(handle)
+    def test_child_process_cannot_keep_stopped_listener_bound(self):
+        child=subprocess.Popen([sys.executable,'-c','import sys; sys.stdin.buffer.read(1)'],
+            stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            close_fds=False, creationflags=subprocess.CREATE_NO_WINDOW)
+        try:
+            lib.mcpkeeper_stop()
+            with socket.socket() as replacement:
+                replacement.bind(('127.0.0.1',self.port)); replacement.listen()
+        finally:
+            child.stdin.write(b'x'); child.stdin.flush(); child.stdin.close()
+            child.wait(timeout=3)
     def test_interrupt_read_releases_connection(self):
         lib.mcpkeeper_attach(); s=self.connect(); handle=lib.mcpkeeper_dequeue(1000)
         buffer=ctypes.create_string_buffer(16); result=[]

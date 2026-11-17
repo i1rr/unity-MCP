@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.1.2]
+
+- Create Windows listening sockets without handle inheritance and clear inheritance on accepted sockets. Import/compiler children can no longer keep stopped MCP listeners bound and unresponsive.
+- Add a real child-process regression that fails with the previous native DLL; rebuild the keeper with the pinned recipe and record reproducible provenance.
+- Retain 1.1.1's physical-provider handover. Already inherited sockets from older releases require one-time cleanup of the owning child processes; upgrading cannot retroactively revoke inherited handles.
+
 ## [1.1.1]
 
 - Bind the Windows socket keeper to the installed package's physical DLL, rather than an ambiguous DLL basename after UPM changes its cache path.
