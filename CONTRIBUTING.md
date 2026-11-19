@@ -44,8 +44,10 @@ The manifest declares Unity 2022.3.19f1 as its minimum. Record the exact Editor
 version you actually use. Recent release validation used Windows and Unity
 6000.6.9f1; other versions/platforms need their own evidence.
 
-- Documentation changes: check relative links, commands and screenshots against
-  the current UI/source. No Unity test run is needed for prose alone.
+- For documentation changes, run `python Tools~/check_docs.py` from the repository
+  root with Python 3.9 or later. It checks local links and images and reports
+  missing targets by file and line. Check commands and screenshots against the
+  current UI and source. No Unity test run is needed for prose alone.
 - Behavior changes: reproduce the old failure and add a focused regression case
   where practical. Exercise affected callers, not just a mock of the new code.
 - Package tests: follow [TestAutomation.md](Documentation~/TestAutomation.md),
