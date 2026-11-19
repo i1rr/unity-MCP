@@ -7,6 +7,9 @@ can be discovered and called. Addressables requires its Unity package and projec
 
 ## Create tools for your project
 
+Follow the [first project module tutorial](FirstProjectModule.md) to build and
+verify a read-only tool that counts colliders in the active scene.
+
 Choose **New module**, enter an ID such as `GameTools` and a short description.
 The equivalent MCP call is:
 
