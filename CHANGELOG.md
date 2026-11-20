@@ -1,12 +1,10 @@
 # Changelog
 
-## [Unreleased]
+## [1.2.0]
 
 - **Breaking:** Require MCP 2026-07-28 stateless HTTP in Editor and development players. Remove 2025 initialization, protocol sessions/persistence, session capacity controls, DELETE termination and wire batches. Reject old versions and session headers before dispatch with upgrade guidance.
 - Pass request context to protocol callbacks and deferred tools; remove string-session callbacks and `DeferredResult.SessionId`. Preserve explicit test/import/UI/recording handles and request-scoped streaming/cancellation.
 - Show request activity without legacy Dashboard sessions and advertise only the stateless version through HTTP/UDP discovery. Document Codex's modern opt-in and require actual client validation.
-
-This breaking change requires a major version when published. Working package versions remain unchanged until release preparation.
 
 ## [1.1.3]
 

@@ -58,7 +58,7 @@ the chat. Script helpers remain useful for scripts and wire diagnostics.
 
 ## Required stateless protocol
 
-This working tree accepts only MCP **2026-07-28** per-request HTTP. The
+Version 1.2.0 accepts only MCP **2026-07-28** per-request HTTP. The
 2025 initialization/session protocols are removed. Each request must carry
 matching version, capabilities, method and applicable name metadata/headers.
 `initialize`, `notifications/initialized`, protocol-level `ping`, HTTP session
@@ -111,7 +111,7 @@ issue, committed configuration or example. The default local scope avoids
 publishing this machine's endpoint in the project. Consult the current
 [Claude Code MCP documentation](https://code.claude.com/docs/en/mcp) for header
 helpers, scopes and server status. Registration alone does not enable a protocol version. Modern Claude Code
-compatibility with this stateless-only working tree has not been verified;
+compatibility with this stateless-only release has not been verified;
 confirm the actual client protocol before adopting it.
 
 ## Cursor
