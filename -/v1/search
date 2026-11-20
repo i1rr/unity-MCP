@@ -3,7 +3,7 @@
     {
       "package": {
         "name": "i1rr-unity-mcp",
-        "version": "1.2.0",
+        "version": "1.2.1",
         "description": "Model Context Protocol tools for Unity Editor workflows and development-player inspection.",
         "keywords": [
           "Tools",
@@ -17,5 +17,5 @@
     }
   ],
   "total": 1,
-  "time": "2026-11-20T14:04:22+11:00"
+  "time": "2026-11-20T15:42:50+11:00"
 }
