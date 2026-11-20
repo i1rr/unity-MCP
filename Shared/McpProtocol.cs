@@ -15,7 +15,7 @@ namespace I1rr.UnityMcp.Shared
     /// <summary>Stateless MCP JSON-RPC dispatch. Every request supplies its own metadata.</summary>
     public static partial class McpProtocol
     {
-        public const string ServerVersion = "1.2.0";
+        public const string ServerVersion = "1.2.1";
         public const int ErrorParseError = -32700;
         public const int ErrorInvalidRequest = -32600;
         public const int ErrorMethodNotFound = -32601;

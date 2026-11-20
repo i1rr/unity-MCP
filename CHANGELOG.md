@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.2.1]
+
+- Clarify Dashboard request history and active SSE response counts, showing their separate retention and concurrency limits. Add tooltips explaining history eviction, the latest-12 display and streaming capacity errors. No protocol migration is required.
+
 ## [1.2.0]
 
 - **Breaking:** Require MCP 2026-07-28 stateless HTTP in Editor and development players. Remove 2025 initialization, protocol sessions/persistence, session capacity controls, DELETE termination and wire batches. Reject old versions and session headers before dispatch with upgrade guidance.
