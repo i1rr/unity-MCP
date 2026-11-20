@@ -607,7 +607,16 @@ namespace I1rr.UnityMcp.Editor
             using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
             {
                 GUILayout.Label("Stateless requests", _headerStyle);
-                EditorGUILayout.LabelField($"Recent: {_modernActivity.Count}/{McpRequestActivity.Capacity} · Open streams: {_modernStreamCount}", EditorStyles.miniLabel);
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    GUILayout.Label(new GUIContent($"History: {_modernActivity.Count}/{McpRequestActivity.Capacity} retained",
+                        $"Retains up to {McpRequestActivity.Capacity} request records in memory. When full, the oldest finished record is removed for a new one. If all retained requests are active, new requests still run but are not recorded. The list shows the latest 12 retained records; get_dashboard_state includes all retained history."),
+                        EditorStyles.miniLabel, GUILayout.ExpandWidth(false));
+                    GUILayout.Space(8);
+                    GUILayout.Label(new GUIContent($"Active SSE responses: {_modernStreamCount}/{McpStreamPool.MaxStreams}",
+                        $"Open request-scoped Server-Sent Events (SSE) responses for deferred tool calls and subscriptions. These work with the stateless protocol and need no protocol session. Up to {McpStreamPool.MaxStreams} responses can be open at once; an additional streaming request receives HTTP 503 before its work starts. This limit is separate from retained history."),
+                        EditorStyles.miniLabel, GUILayout.ExpandWidth(false));
+                }
                 EditorGUILayout.HelpBox("Client labels are self-reported. Cancel stops request work where supported; it does not undo effects or revoke access.", MessageType.Info);
                 foreach (var item in _modernActivity.Take(12))
                 {
