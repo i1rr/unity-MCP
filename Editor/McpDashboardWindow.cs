@@ -10,20 +10,17 @@ using UnityEngine;
 namespace I1rr.UnityMcp.Editor
 {
     /// <summary>
-    /// Dockable MCP Dashboard window — provides live server status, connected sessions,
+    /// Dockable MCP Dashboard window — provides live server status, request activity,
     /// settings, and a scrollable error/warning log. Replaces the Project Settings panel.
     ///
     /// Everything displayed is sampled into a snapshot on a fixed timer (<see cref="RefreshIntervalSec"/>);
     /// <see cref="OnGUI"/> only renders that snapshot. IMGUI invokes OnGUI many times per second
     /// (Layout + Repaint, plus one pass per input event while the cursor is over the window), so
-    /// querying the tool registry, module availability or the session table from OnGUI directly
+    /// querying the tool registry, module availability or request history from OnGUI directly
     /// costs those queries several times a frame.
     /// </summary>
     public sealed class McpDashboardWindow : EditorWindow
     {
-        private const string MaxRetainedSessionsKey = "MCP_MaxRetainedSessions";
-        private const string SessionPruneIdleMinutesKey = "MCP_SessionPruneIdleMinutes";
-        private const string AnonymousSessionReclaimGraceSecondsKey = "MCP_AnonymousSessionReclaimGraceSeconds";
         private const string TokenMask = "••••••••-••••-••••-••••-••••••••••••";
         private const int MaxLogEntries = 200;
         private const double RefreshIntervalSec = 1.0;
@@ -63,27 +60,7 @@ namespace I1rr.UnityMcp.Editor
         private static int _logSubscriberCount;
 
         // --- Snapshot (refreshed on the timer, read by OnGUI) ---
-        private struct SessionView
-        {
-            public string Id;
-            public string Label;
-            public string Kind;
-            public string State;
-            public Color StateColor;
-            public string LastActivity;
-            public string Calls;
 
-            public string InstanceName;
-            public string RunId;
-            public string ReportedClient;
-            public string Protocol;
-            public string ShortId;
-            public string FirstSeen;
-            public string LastOperation;
-            public string Errors;
-            public string UserAgent;
-            public string RemoteAddress;
-        }
 
         private bool _serverRunning;
         private int _serverPort;
@@ -97,7 +74,6 @@ namespace I1rr.UnityMcp.Editor
         private string _transport, _endpoint;
         [SerializeField] private int _selectedTab;
         private static readonly string[] Tabs = { "Overview", "Tools", "Settings", "Activity" };
-        private readonly List<SessionView> _sessionViews = new();
         private JArray _modernActivity = new JArray();
         private int _modernStreamCount;
         private sealed class ToolView
@@ -120,7 +96,6 @@ namespace I1rr.UnityMcp.Editor
         // Scratch buffers reused by the refresh so sampling allocates nothing steady-state.
         private readonly Dictionary<string, int> _displayNameCounts =
             new(StringComparer.OrdinalIgnoreCase);
-        private readonly HashSet<string> _liveSessionIds = new(StringComparer.Ordinal);
 
         // --- UI state ---
         private string _cachedToken;
@@ -148,13 +123,11 @@ namespace I1rr.UnityMcp.Editor
         private double _lastRefreshTime;
         private bool _autoScrollLog = true;
         private bool _scrollLogToEnd;
-        private readonly HashSet<string> _expandedSessions = new(StringComparer.Ordinal);
 
         // Actions raised by controls are applied after the GUI pass finishes: mutating the
         // snapshot mid-pass would change the control count between Layout and Repaint.
         private bool _refreshRequested;
         private bool _clearLogRequested;
-        private string _pendingTerminateSessionId;
         private string _pendingCancelOperationId;
         private enum BacklogAction { None, Enable, Disable, Repair }
         private BacklogAction _pendingBacklogAction;
@@ -191,13 +164,7 @@ namespace I1rr.UnityMcp.Editor
             var expanded = SessionState.GetString("MCP.Dashboard.ExpandedTools", "");
             foreach (var category in expanded.Split('\n'))
                 if (!string.IsNullOrEmpty(category)) _expandedToolGroups.Add(category);
-            McpProtocol.MaxRetainedSessions = Math.Max(1,
-                EditorPrefs.GetInt(MaxRetainedSessionsKey, McpProtocol.MaxRetainedSessions));
-            McpProtocol.SessionPruneIdleThresholdMinutes = Math.Max(0,
-                EditorPrefs.GetInt(SessionPruneIdleMinutesKey, McpProtocol.SessionPruneIdleThresholdMinutes));
-            McpProtocol.AnonymousSessionReclaimGraceSeconds = Math.Max(0,
-                EditorPrefs.GetInt(AnonymousSessionReclaimGraceSecondsKey,
-                    McpProtocol.AnonymousSessionReclaimGraceSeconds));
+
 
             SubscribeLog();
             EditorApplication.update += OnEditorUpdate;
@@ -223,7 +190,7 @@ namespace I1rr.UnityMcp.Editor
         // ===================== SNAPSHOT =====================
         /// <summary>
         /// Samples every value the window displays. This is the only place that touches the
-        /// server, the tool registry, module availability or the session table.
+        /// server, the tool registry, module availability or request history.
         /// </summary>
         internal void RefreshSnapshot()
         {
@@ -252,7 +219,6 @@ namespace I1rr.UnityMcp.Editor
             _issueReader ??= new McpBacklogReader();
             _issueSnapshot = _issueReader.Read(_backlogProjectRoot);
 
-            RefreshSessions();
             _modernActivity = McpRequestActivity.Snapshot();
             _modernStreamCount = EditorStreamingResponses.Pool.Count;
             if (_selectedTab == 0 && (EditorApplication.timeSinceStartup - _lastModuleSample >= 5 || _lastModuleRevision != McpToolRegistry.CatalogRevision))
@@ -336,65 +302,6 @@ namespace I1rr.UnityMcp.Editor
             ["active_request_streams"] = _modernStreamCount
         };
 
-        private void RefreshSessions()
-        {
-            var sessions = McpProtocol.GetSessionsSnapshot();
-
-            _displayNameCounts.Clear();
-            foreach (var session in sessions)
-            {
-                var displayName = session.DisplayName ?? "Unknown MCP Client";
-                _displayNameCounts.TryGetValue(displayName, out var count);
-                _displayNameCounts[displayName] = count + 1;
-            }
-
-            _sessionViews.Clear();
-            _liveSessionIds.Clear();
-
-            foreach (var session in sessions)
-            {
-                var displayName = session.DisplayName ?? "Unknown MCP Client";
-                var ago = DateTime.UtcNow - session.LastActivityUtc;
-
-                var reported = string.IsNullOrEmpty(session.ClientName)
-                    ? "Not reported"
-                    : $"{session.ClientName} {session.ClientVersion}".Trim();
-
-                var lastOperation = session.LastMethod ?? "None";
-                if (!string.IsNullOrEmpty(session.LastTool))
-                    lastOperation += $" · {session.LastTool}";
-
-                _sessionViews.Add(new SessionView
-                {
-                    Id = session.Id,
-                    Label = _displayNameCounts[displayName] > 1
-                        ? $"{displayName} #{session.AppInstanceNumber}"
-                        : displayName,
-                    Kind = FormatClientKind(session.ClientKind),
-                    State = GetClientState(session, out var stateColor),
-                    StateColor = stateColor,
-                    LastActivity = ago.TotalSeconds < 1 ? "now" : $"{FormatTimeAgo(ago)} ago",
-                    Calls = $"{session.RequestCount} requests",
-                    InstanceName = session.ClientInstanceName,
-                    RunId = session.RunId,
-                    ReportedClient = reported,
-                    Protocol = session.ProtocolVersion,
-                    ShortId = Shorten(session.Id, 12),
-                    FirstSeen = session.CreatedAtUtc.ToLocalTime().ToString("g"),
-                    LastOperation = lastOperation,
-                    Errors = session.ErrorCount.ToString(),
-                    UserAgent = session.UserAgent,
-                    RemoteAddress = session.RemoteAddress
-                });
-
-                _liveSessionIds.Add(session.Id);
-            }
-
-            // Drop fold-out state for sessions that no longer exist, otherwise the set grows
-            // for the lifetime of the window.
-            if (_expandedSessions.Count > 0)
-                _expandedSessions.IntersectWith(_liveSessionIds);
-        }
 
         private void RefreshModules()
         {
@@ -520,7 +427,6 @@ namespace I1rr.UnityMcp.Editor
                         EditorGUILayout.Space(6);
                         DrawModules();
                         EditorGUILayout.Space(6);
-                        DrawConnectedSessions();
                         EditorGUILayout.Space(6);
                         DrawModernActivity();
                         break;
@@ -600,12 +506,7 @@ namespace I1rr.UnityMcp.Editor
                 _refreshRequested = true;
             }
 
-            if (_pendingTerminateSessionId != null)
-            {
-                McpProtocol.TerminateSession(_pendingTerminateSessionId);
-                _expandedSessions.Remove(_pendingTerminateSessionId);
-                _pendingTerminateSessionId = null;
-            }
+
             if (_pendingCancelOperationId != null)
             {
                 McpRequestActivity.Cancel(_pendingCancelOperationId);
@@ -641,7 +542,7 @@ namespace I1rr.UnityMcp.Editor
                 EditorGUILayout.Space(2);
 
                 // A cached snapshot alone cannot establish main-thread readiness. This
-                // monotonic heartbeat read does not query Unity, sessions or the registry.
+                // monotonic heartbeat read does not query Unity, request history or the registry.
                 bool responsive = _serverRunning && EditorDispatchReadiness.IsResponsive;
                 var statusText = !_serverRunning ? "Stopped" : !responsive ? "Editor update stalled" : _editorBusy ? "Unity compiling / importing" : "Editor responding";
                 var statusColor = responsive && !_editorBusy ? new Color(0.2f, 0.8f, 0.2f) : new Color(0.8f, 0.5f, 0.2f);
@@ -699,74 +600,7 @@ namespace I1rr.UnityMcp.Editor
         }
 
         // ===================== CONNECTED SESSIONS =====================
-        private void DrawConnectedSessions()
-        {
-            using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
-            {
-                GUILayout.Label("Legacy client sessions", _headerStyle);
-                EditorGUILayout.Space(2);
 
-                if (_sessionViews.Count == 0)
-                {
-                    EditorGUILayout.LabelField("No retained client sessions.", EditorStyles.miniLabel);
-                }
-                else
-                {
-                    foreach (var session in _sessionViews)
-                    {
-                        var expanded = _expandedSessions.Contains(session.Id);
-
-                        using (new EditorGUILayout.HorizontalScope())
-                        {
-                            var nextExpanded = EditorGUILayout.Foldout(expanded, new GUIContent(session.Label), true,
-                                EditorStyles.foldout);
-                            if (nextExpanded) _expandedSessions.Add(session.Id);
-                            else _expandedSessions.Remove(session.Id);
-
-                            if (position.width >= 600) GUILayout.Label(session.Kind, EditorStyles.miniLabel, GUILayout.Width(70));
-                            GUILayout.Label(session.State, Tinted(_tintedMiniLabel, session.StateColor),
-                                GUILayout.Width(48));
-                            GUILayout.Label(session.LastActivity, EditorStyles.miniLabel, GUILayout.Width(58));
-                            if (position.width >= 600) GUILayout.Label(session.Calls, EditorStyles.miniLabel, GUILayout.Width(90));
-
-                            if (GUILayout.Button(new GUIContent("×", "Terminate this MCP session"),
-                                    EditorStyles.miniButton, GUILayout.Width(20)))
-                            {
-                                _pendingTerminateSessionId = session.Id;
-                                _refreshRequested = true;
-                            }
-                        }
-
-                        if (expanded)
-                        {
-                            using (new EditorGUI.IndentLevelScope())
-                            {
-                                if (!string.IsNullOrEmpty(session.InstanceName))
-                                    EditorGUILayout.LabelField("Instance", session.InstanceName, EditorStyles.miniLabel);
-                                if (!string.IsNullOrEmpty(session.RunId))
-                                    EditorGUILayout.LabelField("Run", session.RunId, EditorStyles.miniLabel);
-
-                                EditorGUILayout.LabelField("Reported client", session.ReportedClient, EditorStyles.miniLabel);
-                                EditorGUILayout.LabelField("Protocol", session.Protocol, EditorStyles.miniLabel);
-                                EditorGUILayout.LabelField("Session", session.ShortId, EditorStyles.miniLabel);
-                                EditorGUILayout.LabelField("First seen", session.FirstSeen, EditorStyles.miniLabel);
-                                EditorGUILayout.LabelField("Last operation", session.LastOperation, EditorStyles.miniLabel);
-                                EditorGUILayout.LabelField("Errors", session.Errors, EditorStyles.miniLabel);
-                                EditorGUILayout.LabelField("HTTP requests", session.Calls, EditorStyles.miniLabel);
-
-                                if (!string.IsNullOrEmpty(session.UserAgent))
-                                    EditorGUILayout.LabelField("User-Agent", session.UserAgent, EditorStyles.miniLabel);
-                                if (!string.IsNullOrEmpty(session.RemoteAddress))
-                                    EditorGUILayout.LabelField("Remote", session.RemoteAddress, EditorStyles.miniLabel);
-                            }
-                        }
-                    }
-                }
-
-                EditorGUILayout.Space(2);
-                EditorGUILayout.LabelField($"Retained sessions: {_sessionViews.Count}", EditorStyles.miniLabel);
-            }
-        }
 
         private void DrawModernActivity()
         {
@@ -997,41 +831,6 @@ namespace I1rr.UnityMcp.Editor
 
                 EditorGUILayout.Space(4);
 
-                var newMaxSessions = EditorGUILayout.IntField(
-                    new GUIContent("Legacy Session Limit",
-                        "Hard limit for legacy MCP session records; modern request history never gates admission. At capacity, abandoned anonymous " +
-                        "records from the same client family are reclaimed before unrelated stale records."),
-                    McpProtocol.MaxRetainedSessions);
-                newMaxSessions = Math.Max(1, newMaxSessions);
-                if (newMaxSessions != McpProtocol.MaxRetainedSessions)
-                {
-                    McpProtocol.MaxRetainedSessions = newMaxSessions;
-                    EditorPrefs.SetInt(MaxRetainedSessionsKey, newMaxSessions);
-                }
-
-                var newPruneMinutes = EditorGUILayout.IntField(
-                    new GUIContent("Stale After (minutes)",
-                        "Idle age required before any non-busy session may be reclaimed under capacity pressure. " +
-                        "Also used for the Stale dashboard state."),
-                    McpProtocol.SessionPruneIdleThresholdMinutes);
-                newPruneMinutes = Math.Max(0, newPruneMinutes);
-                if (newPruneMinutes != McpProtocol.SessionPruneIdleThresholdMinutes)
-                {
-                    McpProtocol.SessionPruneIdleThresholdMinutes = newPruneMinutes;
-                    EditorPrefs.SetInt(SessionPruneIdleMinutesKey, newPruneMinutes);
-                }
-
-                var newReclaimGraceSeconds = EditorGUILayout.IntField(
-                    new GUIContent("Same-Client Reclaim (seconds)",
-                        "At capacity only, minimum idle age before an anonymous session from the same client " +
-                        "family may be replaced. Stable instance sessions are never selected by this rule."),
-                    McpProtocol.AnonymousSessionReclaimGraceSeconds);
-                newReclaimGraceSeconds = Math.Max(0, newReclaimGraceSeconds);
-                if (newReclaimGraceSeconds != McpProtocol.AnonymousSessionReclaimGraceSeconds)
-                {
-                    McpProtocol.AnonymousSessionReclaimGraceSeconds = newReclaimGraceSeconds;
-                    EditorPrefs.SetInt(AnonymousSessionReclaimGraceSecondsKey, newReclaimGraceSeconds);
-                }
 
                 EditorGUILayout.Space(4);
 
@@ -1267,60 +1066,7 @@ namespace I1rr.UnityMcp.Editor
             return $"{seconds / 3600:F0}h {(seconds % 3600) / 60:F0}m";
         }
 
-        private static string GetClientState(McpSession session, out Color color)
-        {
-            if (!session.IsInitialized)
-            {
-                color = new Color(0.9f, 0.6f, 0.2f);
-                return "Pending";
-            }
 
-            if (session.InFlightRequests > 0)
-            {
-                color = new Color(0.3f, 0.75f, 1f);
-                return "Busy";
-            }
 
-            var idle = DateTime.UtcNow - session.LastActivityUtc;
-            if (idle.TotalSeconds <= 30)
-            {
-                color = new Color(0.2f, 0.8f, 0.2f);
-                return "Active";
-            }
-
-            if (idle.TotalMinutes >= McpProtocol.SessionPruneIdleThresholdMinutes)
-            {
-                color = new Color(0.75f, 0.45f, 0.2f);
-                return "Stale";
-            }
-
-            color = new Color(0.65f, 0.65f, 0.65f);
-            return "Idle";
-        }
-
-        private static string FormatClientKind(string kind)
-        {
-            return kind switch
-            {
-                "ai-agent" => "AI agent",
-                "automation" => "Automation",
-                "test-runner" => "Test runner",
-                "ide" => "IDE",
-                _ => "Unknown"
-            };
-        }
-
-        private static string Shorten(string value, int length)
-        {
-            if (string.IsNullOrEmpty(value) || value.Length <= length) return value ?? "";
-            return value.Substring(0, length) + "…";
-        }
-
-        private static string FormatTimeAgo(TimeSpan span)
-        {
-            if (span.TotalSeconds < 60) return $"{span.TotalSeconds:F0}s";
-            if (span.TotalMinutes < 60) return $"{span.TotalMinutes:F0}m";
-            return $"{span.TotalHours:F1}h";
-        }
     }
 }

@@ -81,8 +81,7 @@ namespace I1rr.UnityMcp.Runtime.Tests
                         Body = Encoding.UTF8.GetBytes(request.ToString(Formatting.None)) }
                 });
                 Assert.That(_pending, Is.Not.Null);
-                Assert.That(_pending.SessionId, Is.Null);
-                Assert.That(_pending.RequestContext.IsModern, Is.True);
+                Assert.That(_pending.RequestContext.ProtocolVersion, Is.EqualTo(McpProtocol.ProtocolVersionModern));
                 Assert.That(_pending.RequestContext.Cancellation.CanBeCanceled, Is.True);
                 if (mode == "timeout")
                 {

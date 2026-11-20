@@ -32,7 +32,7 @@ namespace I1rr.UnityMcp.Editor
             public DeferredResult Deferred;
             public DateTime Deadline;
             public int ConnectionHash;
-            public string SessionId;
+
             public string ToolName;
             public McpSseStream Stream;
         }
@@ -40,17 +40,16 @@ namespace I1rr.UnityMcp.Editor
         // --- Deferred Tool Call Handling ---
 
         internal static void HandleDeferredToolCall(McpEditorServer.McpRequest request, JObject jsonRpcReq,
-            string toolName, JObject paramsObj, Dictionary<string, string> headers, string sessionId,
-            McpRequestContext requestContext = null)
+            string toolName, JObject paramsObj, Dictionary<string, string> headers,
+            McpRequestContext requestContext)
         {
             var id = jsonRpcReq["id"];
 
-            requestContext = requestContext ?? McpProtocol.CreateLegacyRequestContext(jsonRpcReq, sessionId);
             var validationError = McpProtocol.ValidateRequestForDispatch(jsonRpcReq, requestContext);
             if (validationError != null)
             {
                 EditorResponseWriter.EnqueueJsonRpcResponse(request,
-                    requestContext.IsModern ? McpProtocol.ModernHttpStatus(validationError) : 200, validationError, headers);
+                    McpProtocol.ModernHttpStatus(validationError), validationError, headers);
                 return;
             }
 
@@ -58,7 +57,7 @@ namespace I1rr.UnityMcp.Editor
             {
                 var errResp = McpProtocol.BuildErrorResponse(id, -32000, "Too many concurrent deferred requests");
                 EditorResponseWriter.EnqueueJsonRpcResponse(request,
-                    requestContext.IsModern ? McpProtocol.ModernHttpStatus(errResp) : 200, errResp, headers);
+                    McpProtocol.ModernHttpStatus(errResp), errResp, headers);
                 return;
             }
 
@@ -74,29 +73,24 @@ namespace I1rr.UnityMcp.Editor
                 var errResp = McpProtocol.BuildErrorResponse(id, -32000,
                     "Too many deferred requests on this connection. Wait for existing deferred calls to complete.");
                 EditorResponseWriter.EnqueueJsonRpcResponse(request,
-                    requestContext.IsModern ? McpProtocol.ModernHttpStatus(errResp) : 200, errResp, headers);
+                    McpProtocol.ModernHttpStatus(errResp), errResp, headers);
                 return;
             }
 
-            if (sessionId != null)
-                headers["MCP-Session-Id"] = sessionId;
 
             McpSseStream stream = null;
-            if (requestContext.IsModern)
+            McpRequestActivity.Begin(requestContext, toolName);
+            stream = EditorStreamingResponses.TryOpen(request, headers, requestContext);
+            if (stream == null)
             {
-                McpRequestActivity.Begin(requestContext, toolName);
-                stream = EditorStreamingResponses.TryOpen(request, headers, requestContext);
-                if (stream == null)
-                {
-                    McpRequestActivity.Finish(requestContext, "not_started");
-                    EditorResponseWriter.EnqueueJsonRpcResponse(request, 503, McpProtocol.BuildErrorResponse(id, -32000,
-                        "Stream capacity reached", new JObject { ["dispatch_state"] = "not_started" }), headers);
-                    return;
-                }
-                requestContext = stream.Context;
+                McpRequestActivity.Finish(requestContext, "not_started");
+                EditorResponseWriter.EnqueueJsonRpcResponse(request, 503, McpProtocol.BuildErrorResponse(id, -32000,
+                    "Stream capacity reached", new JObject { ["dispatch_state"] = "not_started" }), headers);
+                return;
             }
+            requestContext = stream.Context;
 
-            McpProtocol.BeginDeferredRequest(sessionId, McpProtocol.MethodToolsCall, toolName);
+
             var arguments = paramsObj?["arguments"] as JObject;
             object rawResult;
             try
@@ -106,14 +100,12 @@ namespace I1rr.UnityMcp.Editor
             catch
             {
                 stream?.Abort();
-                McpProtocol.CompleteDeferredRequest(sessionId, true);
                 throw;
             }
 
             if (rawResult is DeferredResult deferred)
             {
                 deferred.CreatedAtUtc = DateTime.UtcNow;
-                deferred.SessionId = sessionId;
                 deferred.RequestContext = requestContext;
                 _deferredResponses.Add(new PendingDeferredResponse
                 {
@@ -124,7 +116,7 @@ namespace I1rr.UnityMcp.Editor
                     Deferred = deferred,
                     Deadline = DateTime.UtcNow.AddSeconds(deferred.ClampedTimeout),
                     ConnectionHash = connHash,
-                    SessionId = sessionId, ToolName = toolName, Stream = stream
+                    ToolName = toolName, Stream = stream
                 });
             }
             else
@@ -134,7 +126,6 @@ namespace I1rr.UnityMcp.Editor
                 var jsonRpcResp = McpProtocol.AdaptResponseForContext(McpProtocol.BuildResponse(id, wrapped), requestContext);
                 if (stream != null) stream.Complete(jsonRpcResp);
                 else EditorResponseWriter.EnqueueJsonRpcResponse(request, 200, jsonRpcResp, headers);
-                McpProtocol.CompleteDeferredRequest(sessionId, wrapped["isError"]?.Value<bool>() == true);
             }
         }
 
@@ -153,18 +144,7 @@ namespace I1rr.UnityMcp.Editor
                 if (pending.Stream?.Cancellation.IsCancellationRequested == true)
                 {
                     pending.Deferred.InvokeCleanup();
-                    McpProtocol.CompleteDeferredRequest(pending.SessionId, true);
                     LogCompletion(pending, false, 0, "disconnected_outcome_unknown");
-                    _deferredResponses.RemoveAt(i);
-                    continue;
-                }
-
-                // Check session still valid
-                if (pending.SessionId != null && McpProtocol.GetSession(pending.SessionId) == null)
-                {
-                    pending.Deferred.InvokeCleanup();
-                    var errResp = McpProtocol.BuildErrorResponse(pending.RequestId, -32000, "Session terminated");
-                    SendDeferredResponse(pending, 200, errResp);
                     _deferredResponses.RemoveAt(i);
                     continue;
                 }
@@ -175,7 +155,6 @@ namespace I1rr.UnityMcp.Editor
                     pending.Stream?.Abort();
                     pending.Deferred.InvokeCleanup();
                     CloseDeferredClient(pending);
-                    McpProtocol.CompleteDeferredRequest(pending.SessionId, true);
                     LogCompletion(pending, false, 0, "disconnected");
                     _deferredResponses.RemoveAt(i);
                     continue;
@@ -241,7 +220,6 @@ namespace I1rr.UnityMcp.Editor
             foreach (var pending in _deferredResponses)
             {
                 pending.Deferred.InvokeCleanup();
-                McpProtocol.CompleteDeferredRequest(pending.SessionId, true);
                 LogCompletion(pending, false, 0, "started_outcome_unknown");
                 try
                 {
@@ -319,9 +297,8 @@ namespace I1rr.UnityMcp.Editor
             if (pending.Stream != null && response["error"] is JObject streamError)
                 streamError["data"] = new JObject { ["dispatch_state"] = "started_outcome_unknown" };
             response = McpProtocol.AdaptResponseForContext(response, pending.Deferred.RequestContext);
-            if (pending.Deferred.RequestContext?.IsModern == true) statusCode = McpProtocol.ModernHttpStatus(response);
+            statusCode = McpProtocol.ModernHttpStatus(response);
             var isError = response?["error"] != null || response?["result"]?["isError"]?.Value<bool>() == true;
-            McpProtocol.CompleteDeferredRequest(pending.SessionId, isError);
             var responseBytes = Encoding.UTF8.GetBytes(response.ToString(Formatting.None));
             LogCompletion(pending, !isError, responseBytes.Length, isError ? "deferred_error" : null);
             if (pending.Stream != null)

@@ -255,13 +255,13 @@ namespace I1rr.UnityMcp.Editor
             return true;
         }
 
-        // Background-safe: no Unity objects, session access, or tool dispatch.
+        // Background-safe: no Unity objects or tool dispatch.
         internal static void RejectUndispatchedRequest(McpEditorServer.McpRequest request)
         {
             if (!ValidateHostAndOrigin(request)) return;
             var httpReq = request.HttpRequest;
             httpReq.Headers.TryGetValue("Authorization", out var auth);
-            if (httpReq.Path == McpEndpoint && (httpReq.Method == "POST" || httpReq.Method == "DELETE") &&
+            if (httpReq.Path == McpEndpoint && httpReq.Method == "POST" &&
                 !McpAuth.AuthorizeLocalRequest(McpEditorServer._requireAuthentication, auth, McpEditorServer._authToken))
             {
                 EditorResponseWriter.EnqueueResponse(request, 401, "Unauthorized",
@@ -308,13 +308,10 @@ namespace I1rr.UnityMcp.Editor
                     case "POST":
                         HandlePost(request);
                         return;
-                    case "DELETE":
-                        HandleDelete(request);
-                        return;
                     default:
                         isError = true;
                         EditorResponseWriter.EnqueueResponse(request, 405, "Method Not Allowed", null,
-                            new Dictionary<string, string> { ["Allow"] = "POST, DELETE, OPTIONS" });
+                            new Dictionary<string, string> { ["Allow"] = "POST, OPTIONS" });
                         return;
                 }
             }
@@ -347,42 +344,12 @@ namespace I1rr.UnityMcp.Editor
             if (authenticated)
             {
                 float uptime = UnityEngine.Time.realtimeSinceStartup;
-                var clients = new JArray();
-                foreach (var session in McpProtocol.GetSessionsSnapshot())
-                {
-                    clients.Add(new JObject
-                    {
-                        ["name"] = session.DisplayName,
-                        ["client_name"] = session.ClientName,
-                        ["client_title"] = session.ClientTitle,
-                        ["instance_number"] = session.AppInstanceNumber,
-                        ["instance_id"] = session.ClientInstanceId,
-                        ["instance_name"] = session.ClientInstanceName,
-                        ["run_id"] = session.RunId,
-                        ["kind"] = session.ClientKind,
-                        ["client_version"] = session.ClientVersion,
-                        ["protocol_version"] = session.ProtocolVersion,
-                        ["initialized"] = session.IsInitialized,
-                        ["in_flight_requests"] = session.InFlightRequests,
-                        ["request_count"] = session.RequestCount,
-                        ["error_count"] = session.ErrorCount,
-                        ["last_method"] = session.LastMethod,
-                        ["last_tool"] = session.LastTool,
-                        ["user_agent"] = session.UserAgent,
-                        ["remote_address"] = session.RemoteAddress,
-                        ["created_at_utc"] = session.CreatedAtUtc.ToString("o"),
-                        ["last_activity_utc"] = session.LastActivityUtc.ToString("o")
-                    });
-                }
                 health = new JObject
                 {
                     ["status"] = "ok",
                     ["version"] = McpProtocol.ServerVersion,
                     ["uptime_seconds"] = Math.Round(uptime, 1),
                     ["tool_count"] = McpToolRegistry.ToolCount,
-                    ["session_count"] = McpProtocol.SessionCount,
-                    ["active_sessions"] = McpProtocol.GetSessionIds().Length,
-                    ["clients"] = clients,
                     ["modern_activity_count"] = McpRequestActivity.Snapshot().Count,
                     ["active_request_streams"] = EditorStreamingResponses.Pool.Count
                 };
@@ -401,7 +368,7 @@ namespace I1rr.UnityMcp.Editor
             request.HttpRequest.Headers.TryGetValue("Origin", out var origin);
             var headers = new Dictionary<string, string>
             {
-                ["Access-Control-Allow-Methods"] = "GET, POST, DELETE",
+                ["Access-Control-Allow-Methods"] = "POST, OPTIONS",
                 ["Access-Control-Allow-Headers"] = McpModernHttp.CorsAllowedHeaders(request.HttpRequest.Headers),
                 ["Access-Control-Max-Age"] = "86400"
             };
@@ -412,51 +379,6 @@ namespace I1rr.UnityMcp.Editor
             EditorResponseWriter.EnqueueResponse(request, 200, "OK", null, headers);
         }
 
-        private static void HandleDelete(McpEditorServer.McpRequest request)
-        {
-            var httpReq = request.HttpRequest;
-            var headers = new Dictionary<string, string>();
-            httpReq.Headers.TryGetValue("Origin", out var origin);
-
-            // Origin validation
-            if (!McpAuth.ValidateOrigin(origin, McpEditorServer._port))
-            {
-                EditorResponseWriter.EnqueueResponse(request, 403, "Forbidden",
-                    EditorResponseWriter.BuildJsonError("Forbidden: invalid origin"), null);
-                return;
-            }
-            if (!string.IsNullOrEmpty(origin))
-                headers["Access-Control-Allow-Origin"] = origin;
-
-            // Authorization
-            httpReq.Headers.TryGetValue("Authorization", out var authHeader);
-            if (!McpAuth.AuthorizeLocalRequest(McpEditorServer._requireAuthentication, authHeader, McpEditorServer._authToken))
-            {
-                EditorResponseWriter.EnqueueResponse(request, 401, "Unauthorized",
-                    EditorResponseWriter.BuildJsonError("Unauthorized"), headers);
-                return;
-            }
-
-            // Session header required for DELETE
-            httpReq.Headers.TryGetValue("MCP-Session-Id", out var sessionHeader);
-            if (string.IsNullOrEmpty(sessionHeader))
-            {
-                EditorResponseWriter.EnqueueResponse(request, 400, "Bad Request",
-                    EditorResponseWriter.BuildJsonError("MCP-Session-Id header required for DELETE"), headers);
-                return;
-            }
-
-            if (McpProtocol.GetSession(sessionHeader) == null)
-            {
-                EditorResponseWriter.EnqueueResponse(request, 404, "Not Found",
-                    EditorResponseWriter.BuildJsonError("Session not found"), headers);
-                return;
-            }
-
-            McpProtocol.TerminateSession(sessionHeader);
-            Debug.Log($"[MCP] Session {sessionHeader} terminated via DELETE.");
-            EditorResponseWriter.EnqueueResponse(request, 200, "OK", null, headers);
-        }
 
         private static void HandlePost(McpEditorServer.McpRequest request)
         {
@@ -493,187 +415,50 @@ namespace I1rr.UnityMcp.Editor
                 return;
             }
 
-            // Modern requests carry their own metadata and never consult the legacy session table.
-            if (McpModernHttp.IsModernRequest(httpReq.Headers, httpReq.Body))
+            httpReq.Headers.TryGetValue("Content-Type", out var modernContentType);
+            if (!McpAuth.ValidateContentType(modernContentType))
             {
-                httpReq.Headers.TryGetValue("Content-Type", out var modernContentType);
-                if (!McpAuth.ValidateContentType(modernContentType))
+                EditorResponseWriter.EnqueueJsonRpcResponse(request, 415,
+                    McpProtocol.BuildErrorResponse(null, McpProtocol.ErrorInvalidRequest, "Expected application/json"), headers);
+                return;
+            }
+            if (!McpModernHttp.TryPrepare(httpReq.Headers, httpReq.Body, BuildClientTransportInfo(request),
+                out var modernRequest, out var context, out var error, out var status))
+            {
+                EditorResponseWriter.EnqueueJsonRpcResponse(request, status, error, headers);
+                return;
+            }
+            if (!context.IsNotification && context.Method == McpProtocol.MethodToolsCall)
+            {
+                var parameters = (JObject)modernRequest["params"];
+                var name = (string)parameters["name"];
+                if (McpToolRegistry.IsDeferredTool(name))
                 {
-                    EditorResponseWriter.EnqueueJsonRpcResponse(request, 415,
-                        McpProtocol.BuildErrorResponse(null, McpProtocol.ErrorInvalidRequest, "Expected application/json"), headers);
+                    DeferredResponseManager.HandleDeferredToolCall(request, modernRequest, name, parameters, headers, context);
                     return;
                 }
-                if (!McpModernHttp.TryPrepare(httpReq.Headers, httpReq.Body, BuildClientTransportInfo(request),
-                    out var modernRequest, out var context, out var error, out var status))
-                {
-                    EditorResponseWriter.EnqueueJsonRpcResponse(request, status, error, headers);
-                    return;
-                }
-                if (!context.IsNotification && context.Method == McpProtocol.MethodToolsCall)
-                {
-                    var parameters = (JObject)modernRequest["params"];
-                    var name = (string)parameters["name"];
-                    if (McpToolRegistry.IsDeferredTool(name))
-                    {
-                        DeferredResponseManager.HandleDeferredToolCall(request, modernRequest, name, parameters, headers, null, context);
-                        return;
-                    }
-                }
-                if (!context.IsNotification && context.Method == McpSubscriptions.Method)
-                {
-                    var subscriptionError = McpSubscriptions.Validate(modernRequest);
-                    if (subscriptionError != null)
-                        EditorResponseWriter.EnqueueJsonRpcResponse(request, 400, subscriptionError, headers);
-                    else
-                    {
-                        var stream = EditorStreamingResponses.TryOpen(request, headers, context);
-                        if (stream == null)
-                            EditorResponseWriter.EnqueueJsonRpcResponse(request, 503, McpProtocol.BuildErrorResponse(
-                                context.RequestId, -32000, "Stream capacity reached", new JObject { ["dispatch_state"] = "not_started" }), headers);
-                        else stream.Send(McpSubscriptions.Acknowledgment(context));
-                    }
-                    return;
-                }
-                var modernResponse = McpProtocol.ProcessRequestWithContext(modernRequest, context, out _);
-                if (context.IsNotification)
-                    EditorResponseWriter.EnqueueResponse(request, 202, "Accepted", null, headers);
+            }
+            if (!context.IsNotification && context.Method == McpSubscriptions.Method)
+            {
+                var subscriptionError = McpSubscriptions.Validate(modernRequest);
+                if (subscriptionError != null)
+                    EditorResponseWriter.EnqueueJsonRpcResponse(request, 400, subscriptionError, headers);
                 else
-                    EditorResponseWriter.EnqueueJsonRpcResponse(request, McpProtocol.ModernHttpStatus(modernResponse), modernResponse, headers);
-                return;
-            }
-
-            // 4. Session validation
-            httpReq.Headers.TryGetValue("MCP-Session-Id", out var sessionHeader);
-            var sessionError = McpProtocol.ValidateSessionHeader(sessionHeader, out int sessionHttpStatus, out string matchedSessionId);
-            if (sessionError != null)
-            {
-                Debug.LogWarning($"[MCP] Session validation failed: {sessionError} " +
-                    $"(client={sessionHeader ?? "(none)"}, sessions={McpProtocol.SessionCount}, " +
-                    $"initialized={McpProtocol.IsInitialized}, status={sessionHttpStatus})");
-                EditorResponseWriter.EnqueueResponse(request, sessionHttpStatus, "Session Error",
-                    EditorResponseWriter.BuildJsonError(sessionError), headers);
-                return;
-            }
-
-            // 4b. Protocol version
-            httpReq.Headers.TryGetValue("MCP-Protocol-Version", out var protocolVersionHeader);
-            var versionError = McpProtocol.ValidateProtocolVersionHeader(protocolVersionHeader);
-            if (versionError != null)
-            {
-                EditorResponseWriter.EnqueueResponse(request, 400, "Bad Request",
-                    EditorResponseWriter.BuildJsonError(versionError), headers);
-                return;
-            }
-
-            // 5. Content-Type
-            httpReq.Headers.TryGetValue("Content-Type", out var contentType);
-            if (!McpAuth.ValidateContentType(contentType))
-            {
-                EditorResponseWriter.EnqueueResponse(request, 415, "Unsupported Media Type",
-                    EditorResponseWriter.BuildJsonError("Unsupported Media Type: expected application/json"), headers);
-                return;
-            }
-
-            // 6. Parse body
-            var body = httpReq.Body;
-            if (body == null || body.Length == 0)
-            {
-                var errorResp = McpProtocol.BuildErrorResponse(null, McpProtocol.ErrorParseError, "Empty request body");
-                EditorResponseWriter.EnqueueJsonRpcResponse(request, 200, errorResp, headers);
-                return;
-            }
-
-            string json;
-            try
-            {
-                json = Encoding.UTF8.GetString(body);
-            }
-            catch
-            {
-                var errorResp = McpProtocol.BuildErrorResponse(null, McpProtocol.ErrorParseError, "Invalid UTF-8 encoding");
-                EditorResponseWriter.EnqueueJsonRpcResponse(request, 200, errorResp, headers);
-                return;
-            }
-
-            // 7. Parse JSON-RPC
-            var (requests, parseError) = McpProtocol.ParseRequest(json, matchedSessionId, out var isBatch);
-            if (parseError != null)
-            {
-                EditorResponseWriter.EnqueueJsonRpcResponse(request, 200, parseError, headers);
-                return;
-            }
-
-            // 8. Process
-            if (!isBatch)
-                ProcessSingleRequest(request, requests[0], headers, matchedSessionId);
-            else
-                ProcessBatchRequest(request, requests, headers, matchedSessionId);
-        }
-
-        private static void ProcessSingleRequest(McpEditorServer.McpRequest request, JObject jsonRpcReq,
-            Dictionary<string, string> headers, string sessionId)
-        {
-            bool isNotification = McpProtocol.IsNotification(jsonRpcReq);
-
-            var method = jsonRpcReq["method"]?.Value<string>();
-            var transportInfo = BuildClientTransportInfo(request);
-
-            // Reuse/reclaim the same client family first, then stale sessions; reject only
-            // when capacity is genuinely occupied by protected sessions.
-            if (!isNotification && method == McpProtocol.MethodInitialize &&
-                !McpProtocol.TryPrepareInitialize(jsonRpcReq, sessionId, out var capacityError, transportInfo))
-            {
-                headers["Retry-After"] = "5";
-                EditorResponseWriter.EnqueueResponse(request, 503, "Service Unavailable",
-                    EditorResponseWriter.BuildJsonError(capacityError, McpErrorCodes.SessionCapacity,
-                        "Retry after the Retry-After interval. Reuse MCP-Session-Id or send a stable client instanceId."),
-                    headers);
-                return;
-            }
-
-            if (!isNotification && method == McpProtocol.MethodToolsCall)
-            {
-                var paramsObj = jsonRpcReq["params"] as JObject;
-                var toolName = paramsObj?["name"]?.Value<string>();
-                if (toolName != null && McpToolRegistry.IsDeferredTool(toolName))
                 {
-                    DeferredResponseManager.HandleDeferredToolCall(request, jsonRpcReq, toolName, paramsObj, headers, sessionId);
-                    return;
+                    var stream = EditorStreamingResponses.TryOpen(request, headers, context);
+                    if (stream == null)
+                        EditorResponseWriter.EnqueueJsonRpcResponse(request, 503, McpProtocol.BuildErrorResponse(
+                            context.RequestId, -32000, "Stream capacity reached", new JObject { ["dispatch_state"] = "not_started" }), headers);
+                    else stream.Send(McpSubscriptions.Acknowledgment(context));
                 }
+                return;
             }
-
-            var response = McpProtocol.ProcessRequest(jsonRpcReq, sessionId, out var newSessionId, transportInfo);
-
-            if (newSessionId != null)
-                headers["MCP-Session-Id"] = newSessionId;
-
-            if (isNotification)
+            var modernResponse = McpProtocol.ProcessRequestWithContext(modernRequest, context);
+            if (context.IsNotification)
                 EditorResponseWriter.EnqueueResponse(request, 202, "Accepted", null, headers);
             else
-                EditorResponseWriter.EnqueueJsonRpcResponse(request, 200, response, headers);
-        }
-
-        private static void ProcessBatchRequest(McpEditorServer.McpRequest request, List<JObject> jsonRpcRequests,
-            Dictionary<string, string> headers, string sessionId)
-        {
-            var (responses, newSessionId) = McpProtocol.ProcessBatch(jsonRpcRequests, sessionId,
-                BuildClientTransportInfo(request));
-
-            if (newSessionId != null)
-                headers["MCP-Session-Id"] = newSessionId;
-
-            if (responses.Count == 0)
-            {
-                EditorResponseWriter.EnqueueResponse(request, 202, "Accepted", null, headers);
-            }
-            else
-            {
-                var array = new JArray();
-                foreach (var r in responses) array.Add(r);
-                var responseBytes = Encoding.UTF8.GetBytes(array.ToString(Formatting.None));
-                headers["Content-Type"] = "application/json";
-                EditorResponseWriter.EnqueueResponse(request, 200, "OK", responseBytes, headers);
-            }
+                EditorResponseWriter.EnqueueJsonRpcResponse(request, McpProtocol.ModernHttpStatus(modernResponse), modernResponse, headers);
+            return;
         }
 
         private static McpClientTransportInfo BuildClientTransportInfo(McpEditorServer.McpRequest request)

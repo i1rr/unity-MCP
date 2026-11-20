@@ -12,8 +12,8 @@ namespace I1rr.UnityMcp.Editor.Tests
         [TestCase("POST", false, null, 415)]
         [TestCase("POST", true, null, 401)]
         [TestCase("POST", true, "Bearer test", 415)]
-        [TestCase("DELETE", false, null, 400)]
-        [TestCase("DELETE", true, null, 401)]
+        [TestCase("DELETE", false, null, 405)]
+        [TestCase("DELETE", true, null, 405)]
         public void Pipeline_EnforcesAuthMode(string method, bool required, string auth, int expected)
             => AssertStatus(method, required, auth, "127.0.0.1:8123", null, expected);
 

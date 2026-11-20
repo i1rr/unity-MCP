@@ -60,7 +60,7 @@ Git-installed package and follow the registry installation steps above.
 
 ## Capabilities
 
-- Use MCP 2026-07-28 stateless HTTP or retain existing 2025-era clients.
+- Use MCP 2026-07-28 stateless HTTP; clients must enable modern mode.
 - Inspect and edit scenes, GameObjects, components and assets.
 - Run Unity tests and inspect Play Mode and development players.
 - Capture Game View screenshots and video.

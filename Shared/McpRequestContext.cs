@@ -5,7 +5,7 @@ namespace I1rr.UnityMcp.Shared
 {
     /// <summary>
     /// Metadata captured for one admitted request. JSON and transport properties return
-    /// copies so later requests, session changes and callbacks cannot rewrite the snapshot.
+    /// copies so later requests and callbacks cannot rewrite the snapshot.
     /// ClientInfo is self-reported; only the host may supply AuthenticatedPrincipal.
     /// Cancellation is deliberately live, while the metadata is immutable.
     /// </summary>
@@ -22,9 +22,6 @@ namespace I1rr.UnityMcp.Shared
         public string OperationId { get; }
         public JToken RequestId => _requestId?.DeepClone();
         public string ProtocolVersion { get; }
-        public bool IsModern => ProtocolVersion == McpProtocol.ProtocolVersionModern;
-        public string LegacySessionId { get; }
-        public bool IsInitialized { get; }
         public bool IsNotification => _requestId == null;
         public JObject ClientCapabilities => (JObject)_capabilities.DeepClone();
         public JObject ClientInfo => (JObject)_clientInfo.DeepClone();
@@ -34,11 +31,11 @@ namespace I1rr.UnityMcp.Shared
             new McpClientTransportInfo { UserAgent = _userAgent, RemoteAddress = _remoteAddress };
 
         public McpRequestContext WithCancellation(CancellationToken cancellation) =>
-            new McpRequestContext(Method, _requestId, ProtocolVersion, LegacySessionId, IsInitialized,
+            new McpRequestContext(Method, _requestId, ProtocolVersion,
                 _capabilities, _clientInfo, TransportInfo, AuthenticatedPrincipal, cancellation, OperationId);
 
         internal McpRequestContext(string method, JToken requestId, string protocolVersion,
-            string legacySessionId, bool initialized, JObject capabilities, JObject clientInfo,
+            JObject capabilities, JObject clientInfo,
             McpClientTransportInfo transportInfo, string authenticatedPrincipal,
             CancellationToken cancellation, string operationId = null)
         {
@@ -46,8 +43,6 @@ namespace I1rr.UnityMcp.Shared
             Method = method;
             _requestId = requestId?.DeepClone();
             ProtocolVersion = protocolVersion;
-            LegacySessionId = legacySessionId;
-            IsInitialized = initialized;
             _capabilities = (JObject)(capabilities?.DeepClone() ?? new JObject());
             _clientInfo = (JObject)(clientInfo?.DeepClone() ?? new JObject());
             _hasTransport = transportInfo != null;

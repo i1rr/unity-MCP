@@ -28,11 +28,11 @@ Use a fresh output directory if rebuilding a changed candidate.
 
 ## Exercise the deliverable
 
-First install the generated archive in a new project whose only manifest dependency is the MCP. Confirm a clean import, a focused default catalog, full discovery on request and a live handshake. Rebuild the Windows socket keeper with its pinned recipe and verify its recorded hashes when the source or binary changes.
+First install the generated archive in a new project whose only manifest dependency is the MCP. Confirm a clean import, a focused default catalog, full discovery on request and live stateless discovery. Rebuild the Windows socket keeper with its pinned recipe and verify its recorded hashes when the source or binary changes.
 
 Install the generated `.tgz` in a clean Unity test project using **Install package
 from tarball**. Check the resolved package ID and version, run its Editor
-and Runtime suites, and check a live `initialize` and tool call. Follow
+and Runtime suites, and check live `server/discover` and a stateless tool call, plus old-version/session rejection. Follow
 [package tests](../../../Documentation~/TestAutomation.md)
 for assembly selection and native checks. Record the actual Unity versions,
 test results, commit and artifact hash. Only claim editor versions tested.

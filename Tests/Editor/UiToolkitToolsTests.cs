@@ -99,7 +99,7 @@ namespace I1rr.UnityMcp.Editor.Tests
                     request["id"] = requestId;
                     request["params"]["name"] = "act_on_ui_element";
                     request["params"]["arguments"] = new JObject { ["handle"] = handle, ["action"] = "submit" };
-                    return McpProtocol.ProcessRequestWithContext(request, McpProtocol.CreateModernRequestContext(request), out _);
+                    return McpProtocol.ProcessRequestWithContext(request, McpProtocol.CreateModernRequestContext(request));
                 }
                 var first = Dispatch(1);
                 Assert.That(first["result"]["isError"], Is.Null);

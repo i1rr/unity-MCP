@@ -15,7 +15,7 @@ namespace I1rr.UnityMcp.Shared
 
         public static string CorsAllowedHeaders(IDictionary<string, string> requestHeaders)
         {
-            const string standard = "Content-Type, Authorization, MCP-Session-Id, MCP-Protocol-Version, Mcp-Method, Mcp-Name";
+            const string standard = "Content-Type, Authorization, MCP-Protocol-Version, Mcp-Method, Mcp-Name";
             var requested = Header(requestHeaders, "Access-Control-Request-Headers");
             if (string.IsNullOrEmpty(requested)) return standard;
             var custom = requested.Split(',').Select(h => h.Trim())
@@ -28,23 +28,6 @@ namespace I1rr.UnityMcp.Shared
         private static string Header(IDictionary<string, string> headers, string name) =>
             headers?.FirstOrDefault(h => string.Equals(h.Key, name, StringComparison.OrdinalIgnoreCase)).Value;
 
-        public static bool IsModernRequest(IDictionary<string, string> headers, byte[] body)
-        {
-            var version = Header(headers, "MCP-Protocol-Version");
-            if (!string.IsNullOrEmpty(version) && version != McpProtocol.ProtocolVersionBaseline &&
-                version != McpProtocol.ProtocolVersionNext) return true;
-            try
-            {
-                var token = JToken.Parse(Utf8.GetString(body ?? Array.Empty<byte>()));
-                return token is JObject one ? HasModernMetadata(one) :
-                    token is JArray batch && batch.OfType<JObject>().Any(HasModernMetadata);
-            }
-            catch (Exception e) when (e is JsonException || e is DecoderFallbackException) { return false; }
-        }
-
-        private static bool HasModernMetadata(JObject request) =>
-            request["method"]?.Type == JTokenType.String && (string)request["method"] == "server/discover" ||
-            ((request["params"] as JObject)?["_meta"] as JObject)?.Property(McpProtocol.VersionMetaKey) != null;
 
         public static bool TryPrepare(IDictionary<string, string> headers, byte[] body,
             McpClientTransportInfo transport, out JObject request, out McpRequestContext context,
@@ -62,14 +45,17 @@ namespace I1rr.UnityMcp.Shared
             var meta = (request["params"] as JObject)?["_meta"] as JObject;
             var version = Header(headers, "MCP-Protocol-Version");
             var requested = meta?[McpProtocol.VersionMetaKey];
-            if (string.IsNullOrEmpty(version) || requested?.Type != JTokenType.String || (string)requested != version)
-            { error = Mismatch(id, "Missing or mismatched protocol version header/metadata"); return false; }
             if (version != McpProtocol.ProtocolVersionModern)
             {
                 error = McpProtocol.BuildErrorResponse(id, McpProtocol.ErrorUnsupportedProtocolVersion,
-                    "Unsupported protocol version", new JObject { ["supported"] = McpProtocol.SupportedVersions, ["requested"] = version });
+                    "Only stateless MCP 2026-07-28 is supported; enable modern protocol mode in your client.",
+                    new JObject { ["supported"] = McpProtocol.SupportedVersions, ["requested"] = version });
                 return false;
             }
+            if (requested?.Type != JTokenType.String || (string)requested != version)
+            { error = Mismatch(id, "Missing or mismatched protocol version header/metadata"); return false; }
+            if (!string.IsNullOrEmpty(Header(headers, "MCP-Session-Id")))
+            { error = Mismatch(id, "MCP-Session-Id is not supported; send independent stateless requests"); return false; }
             var method = (string)request["method"];
             if (Header(headers, "Mcp-Method") != method)
             { error = Mismatch(id, "Missing or mismatched Mcp-Method header"); return false; }

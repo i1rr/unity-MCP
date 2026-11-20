@@ -107,7 +107,7 @@ namespace I1rr.UnityMcp.Editor.Tests
                 McpProtocol.OnToolsList = (_, __) => new JObject { ["tools"] = McpToolRegistry.ListTools() };
                 McpProtocol.OnToolsCall = (_, __) => McpToolRegistry.Invoke(ToolName, new JObject());
                 JObject Dispatch(JObject request) => McpProtocol.ProcessRequestWithContext(request,
-                    McpProtocol.CreateModernRequestContext(request), out _);
+                    McpProtocol.CreateModernRequestContext(request));
                 var list = McpModernProtocolTests.Request("tools/list");
                 Assert.That(Dispatch(list)["result"]["tools"].Any(t => (string)t["name"] == ToolName), Is.True);
                 int calls = _calls;

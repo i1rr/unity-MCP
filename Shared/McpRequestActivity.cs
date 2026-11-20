@@ -24,7 +24,7 @@ namespace I1rr.UnityMcp.Shared
 
         public static void Begin(McpRequestContext context, string tool = null)
         {
-            if (context?.IsModern != true) return;
+            if (context == null) return;
             lock (Gate)
             {
                 if (Entries.ContainsKey(context.OperationId)) return;
@@ -86,6 +86,6 @@ namespace I1rr.UnityMcp.Shared
             lock (Gate) return new JArray(Order.Reverse().Select(id => Entries[id].Data.DeepClone()));
         }
 
-        internal static void Clear() { lock (Gate) { Entries.Clear(); Order.Clear(); } }
+        public static void Clear() { lock (Gate) { Entries.Clear(); Order.Clear(); } }
     }
 }

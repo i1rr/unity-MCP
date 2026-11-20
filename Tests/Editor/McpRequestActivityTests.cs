@@ -14,19 +14,17 @@ namespace I1rr.UnityMcp.Editor.Tests
 
         [Test] public void HistoryEvictionIsIndependentOfModernAdmission()
         {
-            int sessions = McpProtocol.SessionCount;
             for (int i = 0; i < McpRequestActivity.Capacity + 3; i++)
             {
                 var request = McpModernProtocolTests.Request();
                 var context = McpProtocol.CreateModernRequestContext(request);
-                Assert.That(McpProtocol.ProcessRequestWithContext(request, context, out _)["error"], Is.Null);
+                Assert.That(McpProtocol.ProcessRequestWithContext(request, context)["error"], Is.Null);
             }
             Assert.That(McpRequestActivity.Snapshot().Count, Is.EqualTo(McpRequestActivity.Capacity));
-            Assert.That(McpProtocol.SessionCount, Is.EqualTo(sessions));
             McpRequestActivity.Clear();
             for (int i = 0; i < McpRequestActivity.Capacity; i++) McpRequestActivity.Begin(Context());
             var extra = McpModernProtocolTests.Request();
-            Assert.That(McpProtocol.ProcessRequestWithContext(extra, McpProtocol.CreateModernRequestContext(extra), out _)["error"], Is.Null,
+            Assert.That(McpProtocol.ProcessRequestWithContext(extra, McpProtocol.CreateModernRequestContext(extra))["error"], Is.Null,
                 "Even a full active observation table must not reject a modern request");
         }
 

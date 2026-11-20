@@ -74,8 +74,7 @@ Verify live UPM file-to-archive and registry-version changes in one graphical
 Windows Editor process. Record the PID, original endpoint, physical provider and
 owned listeners before/after each transition; require one healthy MCP listener,
 the expected new managed assembly/package and direct native-client calls. Exercise
-an interrupted deferred reply/subscription, single cleanup, preserved legacy
-session/auth settings and ordinary same-path reload. A clean install or a restart
+an interrupted deferred reply/subscription, single cleanup, preserved authentication and fresh stateless requests and ordinary same-path reload. A clean install or a restart
 workaround cannot establish live upgrade recovery.
 
 ## Release checks
@@ -84,7 +83,8 @@ From the repository root, use `python Tools~/test_install.py --unity <editor>
 --project <new-directory> --package <archive-or-git-url> --version <version>`
 to create an empty project whose only dependency is the package. For Git
 installs, pass `--commit <sha>` to check the lockfile resolution. Also run the test-enabled consumer separately. Check focused and
-full catalog sizes and a real protocol handshake. For build changes, verify a
+full catalog sizes, native stateless discovery/tool calls and rejection of old
+versions/session headers. For build changes, verify a
 development player with its packaged token, a normal player without the token,
 and a build that refuses a project-owned token collision without modifying it.
 

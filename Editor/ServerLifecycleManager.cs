@@ -16,8 +16,7 @@ using UnityEngine;
 namespace I1rr.UnityMcp.Editor
 {
     /// <summary>
-    /// Manages server lifecycle — start/stop, port selection, domain reload hooks, session
-    /// state persistence, native/fallback transport initialization, and resource cleanup.
+    /// Manages server lifecycle — start/stop, port selection, domain reload hooks, native/fallback transport initialization, and resource cleanup.
     /// </summary>
     internal static class ServerLifecycleManager
     {
@@ -27,9 +26,6 @@ namespace I1rr.UnityMcp.Editor
         private const int MaxPortProbes = 11; // base + 10 retries
         private const int ShutdownJoinTimeoutMs = 6500;
         private const string PortFileName = "MCPServer.port";
-        private const string MaxRetainedSessionsKey = "MCP_MaxRetainedSessions";
-        private const string SessionPruneIdleMinutesKey = "MCP_SessionPruneIdleMinutes";
-        private const string AnonymousSessionReclaimGraceSecondsKey = "MCP_AnonymousSessionReclaimGraceSeconds";
 
         // --- Public Lifecycle Methods ---
 
@@ -45,14 +41,6 @@ namespace I1rr.UnityMcp.Editor
             try
             {
                 InitializePaths();
-                McpProtocol.MaxRetainedSessions = Math.Max(1,
-                    EditorPrefs.GetInt(MaxRetainedSessionsKey, McpProtocol.MaxRetainedSessions));
-                McpProtocol.SessionPruneIdleThresholdMinutes = Math.Max(0,
-                    EditorPrefs.GetInt(SessionPruneIdleMinutesKey,
-                        McpProtocol.SessionPruneIdleThresholdMinutes));
-                McpProtocol.AnonymousSessionReclaimGraceSeconds = Math.Max(0,
-                    EditorPrefs.GetInt(AnonymousSessionReclaimGraceSecondsKey,
-                        McpProtocol.AnonymousSessionReclaimGraceSeconds));
                 WireUpProtocol();
 
                 McpEditorServer._useNativeTransport = NativeSocketKeeper.IsAvailable;
@@ -76,41 +64,6 @@ namespace I1rr.UnityMcp.Editor
 
                 SessionManager.Initialize();
 
-                // Restore MCP session state if persisted from a previous domain reload.
-                // This lets clients continue using the same session without reinitializing.
-                var savedSessions = SessionState.GetString("MCP.Sessions", null);
-                if (!string.IsNullOrEmpty(savedSessions))
-                {
-                    try
-                    {
-                        var arr = JArray.Parse(savedSessions);
-                        foreach (var item in arr)
-                        {
-                            if (item is JObject state)
-                                McpProtocol.RestoreSession(state);
-                        }
-                        Debug.Log($"[MCP] Restored {arr.Count} session(s) from before domain reload.");
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.LogWarning($"[MCP] Failed to restore sessions: {ex.Message}");
-                    }
-                    SessionState.EraseString("MCP.Sessions");
-                }
-                else
-                {
-                    // Legacy migration: single session from old format
-                    var savedSessionId = SessionState.GetString("MCP.SessionId", null);
-                    if (!string.IsNullOrEmpty(savedSessionId))
-                    {
-                        var savedProtocolVersion = SessionState.GetString("MCP.ProtocolVersion", null);
-                        McpProtocol.RestoreSession(savedSessionId, savedProtocolVersion);
-                        Debug.Log($"[MCP] Restored session {savedSessionId} from before domain reload (legacy).");
-                    }
-                    SessionState.EraseString("MCP.SessionId");
-                    SessionState.EraseString("MCP.ProtocolVersion");
-                }
-
                 DiagnosticsTools.RecordStartTime();
 
                 // Initialize structured logging and metrics
@@ -122,7 +75,7 @@ namespace I1rr.UnityMcp.Editor
 
                 WritePortFile(McpEditorServer._port);
                 WriteMcpJsonIfNeeded(McpEditorServer._port);
-                // Do not accept managed work until queues, sessions and configuration are ready.
+                // Do not accept managed work until queues and configuration are ready.
                 if (McpEditorServer._useNativeTransport) NativeSocketKeeper.Attach();
 
                 var transport = McpEditorServer._useNativeTransport ? "native (domain-reload resilient)" : "HttpListener (fallback)";
@@ -162,12 +115,7 @@ namespace I1rr.UnityMcp.Editor
             StructuredLogger.Shutdown();
 
             McpEditorServer._lastWrittenPort = 0;
-            McpProtocol.Reset();
-            // Clear persisted session state on full shutdown
-            SessionState.EraseString("MCP.Sessions");
-            SessionState.EraseString("MCP.SessionId");
-            SessionState.EraseString("MCP.ProtocolVersion");
-
+            McpRequestActivity.Clear();
             Debug.Log("[MCP] Server stopped.");
         }
 
@@ -183,27 +131,6 @@ namespace I1rr.UnityMcp.Editor
                 return;
 
             StopManagedLayer();
-
-            // Persist session state before domain reload wipes all static fields.
-            // This lets clients continue using the same MCP session after reload.
-            if (McpProtocol.SessionCount > 0)
-            {
-                var sessionIds = McpProtocol.GetSessionIds();
-                var sessionsJson = new JArray();
-                foreach (var sid in sessionIds)
-                {
-                    var s = McpProtocol.GetSession(sid);
-                    if (s != null)
-                    {
-                        sessionsJson.Add(McpProtocol.SerializeSession(s));
-                    }
-                }
-                SessionState.SetString("MCP.Sessions", sessionsJson.ToString(Newtonsoft.Json.Formatting.None));
-                Debug.Log($"[MCP] Persisting {sessionIds.Length} session(s) across domain reload.");
-                // Clear legacy key
-                SessionState.EraseString("MCP.SessionId");
-                SessionState.EraseString("MCP.ProtocolVersion");
-            }
 
             if (McpEditorServer._useNativeTransport && NativeSocketKeeper.IsAvailable)
             {
@@ -383,14 +310,14 @@ namespace I1rr.UnityMcp.Editor
         {
             McpToolRegistry.IsInPlayMode = () => EditorApplication.isPlaying;
 
-            McpProtocol.OnToolsList = (request, sessionId) =>
+            McpProtocol.OnToolsList = (request, context) =>
             {
                 var paramsObj = request["params"] as JObject;
                 var tools = ToolCatalog.Advertise(paramsObj);
                 return new JObject { ["tools"] = tools };
             };
 
-            McpProtocol.OnToolsCall = (request, sessionId) =>
+            McpProtocol.OnToolsCall = (request, context) =>
             {
                 var paramsObj = request["params"] as JObject;
                 var toolName = paramsObj?["name"]?.Value<string>();

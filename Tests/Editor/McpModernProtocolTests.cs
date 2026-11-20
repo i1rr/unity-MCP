@@ -11,14 +11,14 @@ namespace I1rr.UnityMcp.Editor.Tests
 {
     public class McpModernProtocolTests
     {
-        private Func<JObject, string, JToken> _call, _list, _read;
+        private Func<JObject, McpRequestContext, JToken> _call, _list, _read;
 
         [SetUp] public void SetUp()
         {
             _call = McpProtocol.OnToolsCall;
             _list = McpProtocol.OnToolsList;
             _read = McpProtocol.OnResourcesRead;
-            McpProtocol.Reset();
+            McpRequestActivity.Clear();
         }
 
         [TearDown] public void TearDown()
@@ -26,7 +26,7 @@ namespace I1rr.UnityMcp.Editor.Tests
             McpProtocol.OnToolsCall = _call;
             McpProtocol.OnToolsList = _list;
             McpProtocol.OnResourcesRead = _read;
-            McpProtocol.Reset();
+            McpRequestActivity.Clear();
         }
 
         internal static JObject Request(string method = "server/discover") => new JObject
@@ -55,38 +55,83 @@ namespace I1rr.UnityMcp.Editor.Tests
             Assert.That(McpModernHttp.TryPrepare(headers ?? Headers(request), Bytes(request), null,
                 out var parsed, out var context, out var error, out var status), Is.True, error?.ToString());
             Assert.That(status, Is.EqualTo(200));
-            Assert.That(context.LegacySessionId, Is.Null);
-            var response = McpProtocol.ProcessRequestWithContext(parsed, context, out var newSession);
-            Assert.That(newSession, Is.Null);
+            var response = McpProtocol.ProcessRequestWithContext(parsed, context);
             return response;
         }
 
-        [Test] public void FirstCallAndFullLegacyTableDoNotAllocateModernSessions()
+        [Test] public void DiscoveryAdvertisesOnlyStatelessProtocol()
         {
-            var first = PrepareAndDispatch(Request());
-            Assert.That((string)first["result"]["resultType"], Is.EqualTo("complete"));
-            Assert.That(McpProtocol.SessionCount, Is.Zero);
-            var limit = McpProtocol.MaxRetainedSessions;
+            var response = PrepareAndDispatch(Request());
+            Assert.That((string)response["result"]["resultType"], Is.EqualTo("complete"));
+            Assert.That(((JArray)response["result"]["supportedVersions"]).Values<string>(),
+                Is.EqualTo(new[] { McpProtocol.ProtocolVersionModern }));
+        }
+
+        [TestCase(null)]
+        [TestCase("2025-03-26")]
+        [TestCase("2025-06-18")]
+        [TestCase("2025-11-25")]
+        public void RemovedVersionsAreRejectedWithUpgradeGuidance(string version)
+        {
+            var request = Request("initialize");
+            var headers = Headers(request);
+            headers["mcp-protocol-version"] = version;
+            AssertRejected(request, headers, McpProtocol.ErrorUnsupportedProtocolVersion);
+        }
+
+        [Test] public void SessionHeadersAreRejected()
+        {
+            var request = Request();
+            var headers = Headers(request);
+            headers["MCP-Session-Id"] = "former-session";
+            AssertRejected(request, headers, McpProtocol.ErrorHeaderMismatch);
+        }
+
+        [TestCase("2025-03-26", null, "initialize", 400)]
+        [TestCase("2025-11-25", null, "initialize", 400)]
+        [TestCase(null, null, "initialize", 400)]
+        [TestCase("2026-07-28", "old-session", "tools/call", 400)]
+        [TestCase("2026-07-28", null, "initialize", 404)]
+        [TestCase("2026-07-28", null, "tools/call", 200)]
+        public void EditorHttpAdmissionRejectsRemovedLifecycleBeforeDispatch(string version, string session, string method, int expected)
+        {
+            var previous = McpEditorServer._outboundQueue;
+            using var queue = new System.Collections.Concurrent.BlockingCollection<McpEditorServer.CompletedRequest>();
+            int calls = 0;
+            McpProtocol.OnToolsCall = (_, __) => { calls++; return new JObject { ["ok"] = true }; };
+            var request = Request(method);
+            request["params"]["name"] = "stateless_admission_probe";
+            var headers = Headers(request);
+            headers["mcp-protocol-version"] = version;
+            headers["Host"] = "127.0.0.1:" + McpEditorServer.Port;
+            headers["Content-Type"] = "application/json";
+            headers["Authorization"] = "Bearer " + McpEditorServer._authToken;
+            headers["Mcp-Name"] = "stateless_admission_probe";
+            if (session != null) headers["MCP-Session-Id"] = session;
             try
             {
-                McpProtocol.MaxRetainedSessions = 1;
-                McpProtocol.RestoreSession("protected", McpProtocol.ProtocolVersionNext);
-                var request = Request();
-                var headers = Headers(request);
-                headers["MCP-Session-Id"] = "stale-unrelated-session";
-                var response = PrepareAndDispatch(request, headers);
-                Assert.That(response["error"], Is.Null);
-                Assert.That(McpProtocol.SessionCount, Is.EqualTo(1));
-                Assert.That(McpProtocol.GetSession("protected").RequestCount, Is.Zero);
+                McpEditorServer._outboundQueue = queue;
+                EditorRequestPipeline.ProcessRequest(new McpEditorServer.McpRequest {
+                    ClientId = -1, HttpRequest = new TcpHttpHandler.HttpRequest {
+                        Method = "POST", Path = "/mcp", Headers = headers, Body = Bytes(request)
+                    }
+                });
+                Assert.That(queue.TryTake(out var reply), Is.True);
+                Assert.That(reply.StatusCode, Is.EqualTo(expected));
+                Assert.That(reply.Headers.ContainsKey("MCP-Session-Id"), Is.False);
+                Assert.That(calls, Is.EqualTo(expected == 200 ? 1 : 0));
+                var body = JObject.Parse(Encoding.UTF8.GetString(reply.ResponseBytes));
+                if (expected == 200) Assert.That((string)body["result"]["resultType"], Is.EqualTo("complete"));
+                else Assert.That(body["error"], Is.Not.Null);
             }
-            finally { McpProtocol.MaxRetainedSessions = limit; }
+            finally { McpEditorServer._outboundQueue = previous; }
         }
 
         [Test] public void CatalogAndReadResultsAreConservativeAndDeterministic()
         {
             McpProtocol.OnToolsList = (_, sid) =>
             {
-                Assert.That(sid, Is.Null);
+                Assert.That(sid.Method, Is.EqualTo("tools/list"));
                 return new JObject { ["tools"] = new JArray(new JObject { ["name"] = "z" }, new JObject { ["name"] = "a" }) };
             };
             var response = PrepareAndDispatch(Request("tools/list"));
@@ -150,17 +195,19 @@ namespace I1rr.UnityMcp.Editor.Tests
             var request = Request();
             request["params"]["_meta"][McpProtocol.VersionMetaKey] = "2099-01-01";
             AssertRejected(request, Headers(request), McpProtocol.ErrorUnsupportedProtocolVersion);
-            Assert.That(McpProtocol.SessionCount, Is.Zero);
         }
 
-        [Test] public void BatchesAndInvalidUtf8AreRejectedAndMalformedLegacyRoutingDoesNotThrow()
+        [Test] public void BatchesInvalidUtf8AndMalformedMethodsAreRejected()
         {
             var request = Request();
             Assert.That(McpModernHttp.TryPrepare(Headers(request), Bytes(new JArray(request)), null, out _, out _, out var error, out _), Is.False);
             Assert.That((int)error["error"]["code"], Is.EqualTo(McpProtocol.ErrorInvalidRequest));
             Assert.That(McpModernHttp.TryPrepare(Headers(request), new byte[] { 0xff }, null, out _, out _, out error, out _), Is.False);
             Assert.That((int)error["error"]["code"], Is.EqualTo(McpProtocol.ErrorParseError));
-            Assert.DoesNotThrow(() => McpModernHttp.IsModernRequest(new Dictionary<string, string>(), Bytes(new JObject { ["method"] = new JObject() })));
+            request["method"] = new JObject();
+            Assert.That(McpModernHttp.TryPrepare(new Dictionary<string, string>(), Bytes(request), null,
+                out _, out _, out error, out _), Is.False);
+            Assert.That((int)error["error"]["code"], Is.EqualTo(McpProtocol.ErrorInvalidRequest));
         }
 
         [Test] public void ToolFailureStaysAnMcpResultAndUnknownMethodUses404()
@@ -176,7 +223,6 @@ namespace I1rr.UnityMcp.Editor.Tests
             Assert.That(McpProtocol.ModernHttpStatus(response), Is.EqualTo(200));
             response = PrepareAndDispatch(Request("initialize"));
             Assert.That(McpProtocol.ModernHttpStatus(response), Is.EqualTo(404));
-            Assert.That(McpProtocol.SessionCount, Is.Zero);
         }
 
         [Test] public void CustomHeadersFollowStaticNestedPathsAndSafePrimitiveValues()

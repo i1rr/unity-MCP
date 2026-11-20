@@ -76,7 +76,7 @@ The 2026-07-28 HTTP path also validates `x-mcp-header` annotations.
 Use unique HTTP token names on string, boolean or JavaScript-safe integer
 properties reached only through `properties`. Arrays, composition and references
 cannot carry these annotations. Modern catalogs exclude invalid definitions;
-calls reject mismatched headers before dispatch. Legacy schemas are unchanged.
+calls reject mismatched headers before dispatch.
 No current built-in tool requires a custom parameter header.
 
 Modern requests carry their version and client capabilities in `params._meta`
@@ -191,10 +191,10 @@ Key points:
 The host attaches `DeferredResult.RequestContext` before polling the result.
 Read it from later completion callbacks when you need the request's captured
 protocol version, capabilities or client metadata. Its JSON/transport properties
-return copies; session replacement or another request cannot rewrite that
+return copies; another request cannot rewrite that
 snapshot. Client identity is self-reported and is not authorization.
-`SessionId` and the existing string-session protocol callbacks remain available
-for legacy extensions. Capturing metadata does not make a request survive a
+Protocol callbacks receive `(JObject request, McpRequestContext context)`.
+String-session callbacks and `DeferredResult.SessionId` are removed. Capturing metadata does not make a request survive a
 reload or make a mutation safe to repeat; preserve explicit operation handles
 and inspect an unknown outcome before retrying.
 

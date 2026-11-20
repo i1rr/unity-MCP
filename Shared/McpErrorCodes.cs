@@ -33,9 +33,6 @@ namespace I1rr.UnityMcp.Shared
         /// <summary>A configured maximum limit was reached (buffer size, session count, etc.).</summary>
         public const string MaxLimitReached = "max_limit_reached";
 
-        /// <summary>MCP session admission is temporarily at capacity.</summary>
-        public const string SessionCapacity = "session_capacity";
-
         /// <summary>A Perforce operation failed.</summary>
         public const string P4Error = "p4_error";
 

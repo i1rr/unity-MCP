@@ -66,11 +66,11 @@ The `McpEditorServer` class was decomposed into focused single-responsibility co
 | Component | File | Responsibility |
 |-----------|------|---------------|
 | `McpEditorServer` | `McpEditorServer.cs` | Orchestrator — wires components together, DrainInboundQueue |
-| `ServerLifecycleManager` | `ServerLifecycleManager.cs` | Start/stop, domain reload handling, session persistence |
+| `ServerLifecycleManager` | `ServerLifecycleManager.cs` | Start/stop, domain reload handling and transport cleanup |
 | `EditorRequestPipeline` | `EditorRequestPipeline.cs` | Accept thread, HTTP parsing, header validation, inbound queue |
 | `EditorResponseWriter` | `EditorResponseWriter.cs` | Response serialization, outbound queue, HTTP writing |
 | `DeferredResponseManager` | `DeferredResponseManager.cs` | Deferred result polling, timeout, cleanup |
-| `SessionManager` | `Sessions/SessionManager.cs` | Multi-session lifecycle, stale reaping, concurrency limits |
+| `SessionManager` | `Sessions/SessionManager.cs` | Profiler recording lifecycle and concurrency limits |
 | `NativeSocketKeeper` | `NativeSocketKeeper.cs` | P/Invoke wrapper for `mcpkeeper.dll` |
 
 ---
@@ -172,9 +172,9 @@ flowchart TD
     E --> F{Valid?}
     F -->|No| G[Return 400/401/503]
     F -->|Yes| H[Enqueue to Main Thread]
-    H --> I[McpProtocol.HandleRequest]
+    H --> I[Validate stateless envelope and request context]
     I --> J{Method?}
-    J -->|initialize| K[Create/Validate Session]
+    J -->|server/discover| K[Advertise supported protocol and capabilities]
     J -->|tools/list| L[McpToolRegistry.ListTools]
     J -->|tools/call| M[Find & Execute Tool]
     M --> N{Deferred?}
@@ -208,7 +208,7 @@ sequenceDiagram
     participant Client as AI Client
 
     Unity->>SLM: beforeAssemblyReload
-    SLM->>SLM: Save session state to SessionState
+    SLM->>SLM: Interrupt pending work and stage outcomes
     SLM->>NSK: Detach() — stop dequeueing
     SLM->>SLM: Stop Accept + Writer threads
     Note over NSK: Native keeps listening<br/>Returns 503 + Retry-After
@@ -220,7 +220,6 @@ sequenceDiagram
     Unity->>SLM: InitializeOnLoad (static ctor)
     SLM->>SLM: DelayCall → Start()
     SLM->>NSK: Attach() — resume dequeueing
-    SLM->>SLM: Restore sessions from SessionState
     Note over SLM: Server fully operational again
 ```
 
@@ -229,16 +228,14 @@ sequenceDiagram
 | Data | Mechanism |
 |------|-----------|
 | TCP listening socket | Native DLL (`mcpkeeper.dll`) holds socket fd |
-| Session IDs + state | `SessionState` (survives reload) |
-| Protocol version per session | `SessionState` JSON array |
-| Pending deferred results | **Lost** — clients get timeout errors |
+| Pending deferred results | Interrupted; inspect explicit operation handles before retrying |
 
 ### Fallback Mode (No Native DLL)
 
 When `mcpkeeper.dll` is unavailable, the server uses `HttpListener`. During domain reload:
 - The listener is disposed; clients get connection refused.
 - Port file is preserved; clients can reconnect after reload.
-- Sessions are still restored from `SessionState`.
+- Clients send fresh independent requests with per-request metadata.
 
 ---
 
@@ -269,81 +266,25 @@ The managed wrapper is `NativeSocketKeeper.cs` which checks DLL availability onc
 
 ---
 
-## Session Management
+## Stateless request lifecycle
 
-### Multi-Session Support
+Only MCP 2026-07-28 per-request HTTP is accepted. Each POST is authenticated,
+validated by `McpModernHttp`, and dispatched with immutable `McpRequestContext`.
+Matching version/method/name headers and metadata are required; old versions
+and `MCP-Session-Id` are rejected before effects. `server/discover` advertises
+one version. There is no initialize handshake, protocol session table, session
+capacity, session persistence or DELETE lifecycle. Wire batches are rejected.
 
-The protocol layer retains up to 64 MCP client sessions by default in `McpProtocol`. These are
-lightweight logical sessions, not open HTTP sockets. The separate Editor/Runtime `SessionManager`
-types manage profiler recording sessions and are unrelated to MCP client identity.
+Callbacks receive request context. Deferred tools retain that context and its
+cancellation token; SSE owns each connection lifetime. Disconnect, timeout and
+shutdown cancel supported work with main-thread cleanup once. Reload interrupts
+unfinished operations; recover through explicit handles before replaying effects.
 
-```mermaid
-stateDiagram-v2
-    [*] --> Created: initialize request
-    Created --> Initialized: notifications/initialized
-    Initialized --> Active: tools/call, tools/list
-    Active --> Active: ongoing requests
-    Active --> [*]: client sends DELETE
-    Active --> [*]: safely reclaimed under capacity pressure
-```
-
-### Session Lifecycle
-
-1. **Creation**: Client sends `initialize` with `protocolVersion` and standard `clientInfo`. `McpProtocol` creates `McpSession`, captures client identity, and returns capabilities.
-2. **Initialization**: Client sends `notifications/initialized`. Session marked ready.
-3. **Active Use**: Client makes `tools/list` and `tools/call` requests. `LastActivityUtc` updated on each request.
-4. **Termination**: Client sends HTTP `DELETE` to release its session cleanly. Sessions are never reaped below capacity.
-5. **Capacity Pressure**: `MaxRetainedSessions` defaults to 64. At capacity, the server first looks for the oldest non-busy anonymous session from the same client fingerprint that has passed `AnonymousSessionReclaimGraceSeconds`. If none exists, it may reclaim any non-busy session past `SessionPruneIdleThresholdMinutes`. If every session is protected, initialization receives HTTP 503 with `Retry-After` and `session_capacity`.
-6. **Stable Reconnect**: Clients that opt into i1rr-unity-mcp metadata with a stable `instanceId` replace only their own previous non-busy session while retaining their dashboard identity and counters.
-7. **Domain Reload**: Protocol and client-observability state is serialized to `SessionState` via `ServerLifecycleManager` and restored after reload.
-
-### Session ID Routing
-
-Each request carries a session ID in the `Mcp-Session-Id` header. The protocol layer validates:
-- Session exists
-- Session is initialized (for non-`initialize` methods)
-- Retained-session capacity can be satisfied by a same-client abandoned record or a generally stale non-busy record
-
-### Client Identity and Observability
-
-The server records standard `clientInfo` name, title, and version fields from `initialize`, plus
-the HTTP `User-Agent` and remote address as diagnostic fallbacks. Dashboard identity is
-self-reported and must not be treated as authentication.
-
-Clients controlled by the team may add optional namespaced metadata:
-
-```json
-{
-  "params": {
-    "clientInfo": { "name": "test-runner", "title": "Test Runner", "version": "1.0" },
-    "_meta": {
-      "i1rr-unity-mcp/client": {
-        "instanceId": "process-lifetime-uuid",
-        "instanceName": "QA Worker",
-        "kind": "automation",
-        "runId": "playtest-42"
-      }
-    }
-  }
-}
-```
-
-Allowed `kind` values are `ai-agent`, `automation`, `ide`, and `test-runner`. Unknown values
-are displayed as `unknown`. Multiple sessions from the same reported application receive
-stable server-side ordinals such as `Codex #1` and `Codex #2`. In the example above, the
-dashboard shows `Test Runner` as the MCP client and `QA Worker` as its host instance. A controlled
-client can also provide `displayName` when its standard product title is not suitable for the UI.
-
-Clients should keep one `Mcp-Session-Id` per logical server session and reuse it on every
-subsequent request. Controlled clients should generate `instanceId` once per process lifetime,
-not once per request. Same-client reclamation is only a defensive fallback for anonymous clients
-that lose their session ID; it is not a substitute for client-side session ownership.
-
-Below capacity, the server does not merge sessions by application name, User-Agent, or IP address:
-multiple legitimate processes can share all three values. Same-family fingerprinting is used only
-as a capacity-pressure fallback after the configured grace period. Standard clients should retain
-and reuse `Mcp-Session-Id`; controlled clients should also provide a stable `instanceId`
-so a reconnect can replace only its own previous, non-busy session.
+`McpRequestActivity` keeps at most 128 observations in the current managed
+domain. Self-reported labels are informational; eviction never gates admission.
+The Dashboard renders cached request snapshots without discovery in OnGUI.
+Editor/Runtime `SessionManager` types manage profiler recordings; these explicit
+application handles are independent of the removed MCP protocol sessions.
 
 ---
 
@@ -453,7 +394,7 @@ Tools are organized into focused files by domain, following single-responsibilit
 
 `StructuredLogger` outputs JSON-formatted log entries with:
 - Timestamp, severity level, message
-- Context fields (session ID, tool name, request ID)
+- Context fields (tool name, request ID)
 - Configurable minimum severity
 
 ### Metrics

@@ -16,7 +16,7 @@ namespace I1rr.UnityMcp.Shared
         public const int ErrorMissingClientCapability = -32021;
         public const int ErrorUnsupportedProtocolVersion = -32022;
 
-        public static JArray SupportedVersions => new JArray(ProtocolVersionModern, ProtocolVersionNext, ProtocolVersionBaseline);
+        public static JArray SupportedVersions => new JArray(ProtocolVersionModern);
 
         public static McpRequestContext CreateModernRequestContext(JObject request,
             McpClientTransportInfo transportInfo = null, string authenticatedPrincipal = null,
@@ -24,7 +24,7 @@ namespace I1rr.UnityMcp.Shared
         {
             var meta = (request?["params"] as JObject)?["_meta"] as JObject;
             return new McpRequestContext((string)request?["method"], request?["id"], ProtocolVersionModern,
-                null, true, meta?[CapabilitiesMetaKey] as JObject, meta?[ClientInfoMetaKey] as JObject,
+                meta?[CapabilitiesMetaKey] as JObject, meta?[ClientInfoMetaKey] as JObject,
                 transportInfo, authenticatedPrincipal, cancellation);
         }
 
@@ -34,7 +34,7 @@ namespace I1rr.UnityMcp.Shared
             if (request.Property("id") != null && id.Type != JTokenType.String && id.Type != JTokenType.Integer)
                 return BuildErrorResponse(null, ErrorInvalidRequest, "Modern request IDs must be strings or integers");
             var meta = (request["params"] as JObject)?["_meta"] as JObject;
-            if (meta == null || meta[VersionMetaKey]?.Type != JTokenType.String ||
+            if (context.ProtocolVersion != ProtocolVersionModern || meta == null || meta[VersionMetaKey]?.Type != JTokenType.String ||
                 (string)meta[VersionMetaKey] != ProtocolVersionModern || !(meta[CapabilitiesMetaKey] is JObject))
                 return BuildErrorResponse(id, ErrorInvalidParams, "Each modern request requires protocol version and client capabilities metadata");
             var clientInfo = meta[ClientInfoMetaKey];
@@ -64,8 +64,6 @@ namespace I1rr.UnityMcp.Shared
 
         private static JObject DispatchModernRequest(JObject request, McpRequestContext context)
         {
-            var error = ValidateRequestForDispatch(request, context);
-            if (error != null) return error;
             if (context.IsNotification) return null;
             JObject response;
             switch (context.Method)
@@ -82,19 +80,19 @@ namespace I1rr.UnityMcp.Shared
                         ["instructions"] = "Use tools/list and discover_tools for the available catalog. Pass explicit application handles between calls."
                     });
                     break;
-                case MethodToolsList: response = HandleToolsList(request, null); break;
-                case MethodToolsCall: response = HandleToolsCall(request, null); break;
-                case MethodResourcesList: response = HandleResourcesList(request, null); break;
-                case MethodResourcesRead: response = HandleResourcesRead(request, null); break;
+                case MethodToolsList: response = HandleToolsList(request, context); break;
+                case MethodToolsCall: response = HandleToolsCall(request, context); break;
+                case MethodResourcesList: response = HandleResourcesList(request, context); break;
+                case MethodResourcesRead: response = HandleResourcesRead(request, context); break;
                 default: return BuildErrorResponse(context.RequestId, ErrorMethodNotFound, "Method not found: " + context.Method);
             }
             return AdaptResponseForContext(response, context);
         }
 
-        /// <summary>Applies the negotiated envelope without mutating a tool's result or a legacy response.</summary>
+        /// <summary>Applies the negotiated envelope without mutating a tool's result.</summary>
         public static JObject AdaptResponseForContext(JObject response, McpRequestContext context)
         {
-            if (response == null || context?.IsModern != true || response["error"] != null) return response;
+            if (response == null || context == null || response["error"] != null) return response;
             if (!(response["result"] is JObject))
                 return BuildErrorResponse(context.RequestId, ErrorInternalError, "MCP results must be JSON objects");
             var copy = (JObject)response.DeepClone();

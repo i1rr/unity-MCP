@@ -9,7 +9,7 @@ and retires running keepers left at earlier UPM paths. Live upgrades into this
 version, and transitions between versions containing this fix, do not require an
 Editor restart. The replacement prefers the previous owned port when available;
 verify the responding package/assembly and actual endpoint after resolution.
-Ordinary managed reloads keep their existing listener and legacy sessions.
+Ordinary managed reloads keep their existing listener; no protocol session needs restoring.
 Windows can keep inactive native modules resident until Editor exit; one healthy
 MCP listener is the acceptance check, not one loaded DLL.
 
@@ -221,7 +221,7 @@ gates or hardware input; keep those checks in input-driven fixtures.
 
 The transport's request ID identifies one JSON-RPC exchange. It is not an
 idempotency key. Application IDs below remain valid across independent modern
-requests and legacy session changes, within each API's own lifetime.
+requests and reconnections, within each API's own lifetime.
 
 | Operation | Recovery contract | Retention and limits |
 | --- | --- | --- |
@@ -299,45 +299,19 @@ MCP 2026-07-28 requests need no initialization or protocol session. Each POST
 carries version/capabilities in `params._meta` and the required matching HTTP
 headers. `server/discover` is a harmless optional probe. Use a supported SDK to
 handle mirrored names, custom parameter headers, error mapping and SSE.
-See [tested client setup](ConnectYourClient.md#protocol-versions-and-observed-clients).
+See [client setup](ConnectYourClient.md#required-stateless-protocol).
 
-The Dashboard shows bounded modern activity separately from legacy sessions:
-up to 128 records in the current managed domain, with active stream cancellation.
-History eviction never affects admission. Display labels are self-reported and
-cannot grant authority. Cancel stops request work where supported; it neither
-undoes effects nor changes authentication or module permissions. Completed
-activity is observational, not a durable job ledger. Use application status tools
-after interruption or reload. The sections below describe legacy sessions.
+Only the stateless protocol is supported. Old initialization requests, old
+version headers and protocol session headers are rejected before tools run.
+There is no session cache, initialization gate, session capacity or HTTP DELETE
+lifecycle. Upgrade/select modern client mode before connecting; see
+[client setup](ConnectYourClient.md#required-stateless-protocol).
 
-### Initialize
-
-Every client must send `initialize` before any tool calls:
-
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "method": "initialize",
-  "params": {
-    "protocolVersion": "2025-03-26",
-    "capabilities": {},
-    "clientInfo": { "name": "my-agent", "version": "1.0" }
-  }
-}
-```
-
-The response includes:
-- A `Mcp-Session-Id` response header — include this in all subsequent requests
-- Server capabilities (tools, resources)
-- Server info and protocol version
-
-### Maintain
-
-- Include the `Mcp-Session-Id` header on every request after initialization.
-- Sessions do not expire below capacity, so periodic pings are not required solely to preserve a session.
-- The server retains up to 64 sessions by default. At capacity it may replace an older non-busy anonymous session with the same client fingerprint after a short grace period, then falls back to generally stale non-busy sessions. Stable-instance sessions are never selected by the anonymous-family rule.
-- Send complete standard `clientInfo` so the i1rr-unity-mcp Dashboard can identify your application. Controlled automation clients may also send `params._meta["i1rr-unity-mcp/client"]` with `instanceId`, `instanceName`, `displayName`, `kind`, and `runId` for richer diagnostics and stable reconnect identity.
-- Generate `instanceId` once per process lifetime and reuse both it and the returned `Mcp-Session-Id`; do not initialize a new logical session for each operation.
+The Dashboard shows up to 128 request records in the current managed domain,
+with active stream cancellation. History eviction never affects admission.
+Labels are self-reported and cannot grant authority. Cancel stops supported
+work without undoing effects or changing authorization. Completed activity is
+observational; use application status tools after interruption or reload.
 
 ### Reconnect After Domain Reload
 
@@ -345,7 +319,7 @@ Unity reloads C# assemblies frequently (script changes, entering Play Mode). Dur
 - **Native transport (Windows default)**: The listening endpoint survives. New/queued requests receive HTTP 503, `Retry-After: 3` and `dispatch_state: not_started`; these may be retried after the delay. Individual HTTP connections still close after a response.
 - **Fallback transport**: Connections are refused during reload. Reconnect after 2–5 seconds.
 
-Sessions survive domain reloads. Keep the session ID; reinitialize only on an explicit expired/invalid-session rejection. A pending deferred operation instead returns JSON-RPC error data `error_code: reload_interrupted` and `dispatch_state: started_outcome_unknown`. Inspect its effects before retrying a mutation. A timeout/disconnection also has an unknown outcome.
+After reload, send a fresh independent request with required metadata. A pending deferred operation returns JSON-RPC error data `error_code: reload_interrupted` and `dispatch_state: started_outcome_unknown`. Inspect its effects before retrying a mutation. A timeout/disconnection also has an unknown outcome.
 
 The server advertises `tools.listChanged: false`. Modern `subscriptions/listen`
 uses its own bounded SSE response and acknowledges an empty supported filter
@@ -545,7 +519,6 @@ Tool errors return structured error objects:
 | `timeout` | Operation exceeded time budget | Inspect effects; retry reads or use a protected operation ID |
 | `internal_error` | Unexpected server error | Retry once; if persistent, report |
 | `limit_reached` | Resource limit hit | Reduce scope or wait |
-| `session_capacity` | Retained MCP sessions temporarily full | Respect `Retry-After`; reuse the prior session ID or stable instance identity |
 
 ### Retry Strategy
 
@@ -638,7 +611,7 @@ When the server is upgraded (new package version installed):
 2. **Auth token may change** — if the token format is upgraded, re-read the token file from `Library/MCPServer.token`
 3. **New tools appear** — call `tools/list` after reconnect to discover additions
 4. **Port is usually stable** — derived from project path hash; conflicts can select another port, so read current configuration
-5. **Sessions are invalidated** — full server restart clears all sessions; re-initialize after upgrade
+5. **Requests stay independent** — supply per-request metadata after upgrade; application handles retain their documented lifetimes
 
 **Connection configuration** is merged into `.vscode/mcp.json` in the project root. It contains the current URL and, when authentication is enabled, a password input reference. Use the Editor dashboard’s Copy Token button to supply that input.
 

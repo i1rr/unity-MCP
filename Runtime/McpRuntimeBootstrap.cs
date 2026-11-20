@@ -22,7 +22,7 @@ namespace I1rr.UnityMcp.Runtime
             // but ensure it's registered in case execution order varies.
             RuntimeConsoleTools.EnsureRegistered();
 
-            // The Editor owns the project root, MCP sessions, routing and discovery
+            // The Editor owns the project root, request routing and discovery
             // throughout Play Mode. Only a development player starts a TCP server.
             if (Application.isEditor)
             {

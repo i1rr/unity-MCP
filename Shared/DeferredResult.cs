@@ -60,14 +60,7 @@ namespace I1rr.UnityMcp.Shared
         /// </summary>
         public DateTime CreatedAtUtc { get; set; }
 
-        /// <summary>
-        /// The MCP session ID under which this deferred result was created.
-        /// Explicitly captured at creation time — must not use thread-local storage
-        /// because completion callbacks execute during later frame updates.
-        /// </summary>
-        public string SessionId { get; set; }
-
-        /// <summary>Host-captured request metadata for completion on a later frame. SessionId remains compatible.</summary>
+        /// <summary>Host-captured request metadata for completion on a later frame.</summary>
         public McpRequestContext RequestContext { get; set; }
 
         /// <summary>

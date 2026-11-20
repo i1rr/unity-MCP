@@ -14,7 +14,7 @@ namespace I1rr.UnityMcp.Runtime.Tests
 {
     public class ModernHttpPipelineTests
     {
-        [Test] public void DiscoveryAnnouncementKeepsLegacyDefaultAndListsModernVersion()
+        [Test] public void DiscoveryAnnouncementAdvertisesOnlyStatelessVersion()
         {
             var go = new GameObject("Discovery announcement test");
             try
@@ -25,8 +25,8 @@ namespace I1rr.UnityMcp.Runtime.Tests
                 typeof(UdpDiscovery).GetMethod("BuildPayload", flags).Invoke(discovery, null);
                 var bytes = (byte[])typeof(UdpDiscovery).GetField("_payload", flags).GetValue(discovery);
                 var payload = JObject.Parse(Encoding.UTF8.GetString(bytes));
-                Assert.That((string)payload["protocol"], Is.EqualTo(McpProtocol.ProtocolVersionBaseline));
-                Assert.That(((JArray)payload["protocols"]).Values<string>(), Does.Contain(McpProtocol.ProtocolVersionModern));
+                Assert.That((string)payload["protocol"], Is.EqualTo(McpProtocol.ProtocolVersionModern));
+                Assert.That(((JArray)payload["protocols"]).Values<string>(), Is.EqualTo(new[] { McpProtocol.ProtocolVersionModern }));
                 Assert.That(payload["token"], Is.Null);
             }
             finally { Object.DestroyImmediate(go); }
@@ -36,7 +36,12 @@ namespace I1rr.UnityMcp.Runtime.Tests
         [TestCase(null, "test", "tools/list", 400)]
         [TestCase("https://attacker.invalid", "test", "server/discover", 403)]
         [TestCase(null, "wrong", "server/discover", 401)]
-        public void RuntimeRoutesModernRequestsWithoutLegacySession(string origin, string token, string methodHeader, int expected)
+        [TestCase(null, "test", "server/discover", 400, "2025-03-26")]
+        [TestCase(null, "test", "server/discover", 400, "2025-11-25")]
+        [TestCase(null, "test", "server/discover", 400, null)]
+        [TestCase(null, "test", "server/discover", 400, "2026-07-28", "old-session")]
+        public void RuntimeRoutesModernRequestsWithoutInitialization(string origin, string token, string methodHeader, int expected,
+            string version = McpProtocol.ProtocolVersionModern, string session = null)
         {
             var go = new GameObject("Modern HTTP pipeline test");
             var server = go.AddComponent<McpRuntimeServer>();
@@ -61,15 +66,15 @@ namespace I1rr.UnityMcp.Runtime.Tests
                         [McpProtocol.CapabilitiesMetaKey] = new JObject()
                     } }
                 };
-                int sessionsBefore = McpProtocol.SessionCount;
                 var headers = new Dictionary<string, string>(System.StringComparer.OrdinalIgnoreCase)
                 {
                     ["Host"] = "127.0.0.1:" + port, ["Origin"] = origin,
                     ["Authorization"] = "Bearer " + token, ["Content-Type"] = "application/json",
-                    ["MCP-Protocol-Version"] = McpProtocol.ProtocolVersionModern,
-                    ["Mcp-Method"] = methodHeader, ["MCP-Session-Id"] = "stale-session",
+                    ["MCP-Protocol-Version"] = version,
+                    ["Mcp-Method"] = methodHeader,
                     ["Accept"] = "application/json, text/event-stream"
                 };
+                if (session != null) headers["MCP-Session-Id"] = session;
                 typeof(McpRuntimeServer).GetMethod("HandlePost", flags).Invoke(server, new object[]
                 {
                     accepted, new TcpHttpHandler.HttpRequest
@@ -80,7 +85,6 @@ namespace I1rr.UnityMcp.Runtime.Tests
                 using (var reader = new StreamReader(sender.GetStream(), Encoding.UTF8)) wire = reader.ReadToEnd();
                 Assert.That(wire, Does.StartWith("HTTP/1.1 " + expected));
                 Assert.That(wire, Does.Not.Contain("MCP-Session-Id:"));
-                Assert.That(McpProtocol.SessionCount, Is.EqualTo(sessionsBefore));
                 if (expected == 200)
                     Assert.That((string)JObject.Parse(wire.Substring(wire.IndexOf("\r\n\r\n") + 4))["result"]["resultType"], Is.EqualTo("complete"));
             }

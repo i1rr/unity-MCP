@@ -56,22 +56,31 @@ another client does not register tools in Codex. Refresh the actual client's MCP
 connections after configuration changes, then verify directly callable tools in
 the chat. Script helpers remain useful for scripts and wire diagnostics.
 
-## Protocol versions and observed clients
+## Required stateless protocol
 
-Version 1.1.0 supports MCP 2026-07-28 per-request HTTP alongside the existing
-2025-03-26 and 2025-11-25 initialization paths. Older clients continue to use their
-negotiated sessions. Updating the server does not upgrade a client's protocol.
+This working tree accepts only MCP **2026-07-28** per-request HTTP. The
+2025 initialization/session protocols are removed. Each request must carry
+matching version, capabilities, method and applicable name metadata/headers.
+`initialize`, `notifications/initialized`, protocol-level `ping`, HTTP session
+deletion and `MCP-Session-Id` are not supported. Probe `server/discover` before
+effects. Wire JSON-RPC batches are rejected; the `batch_execute` tool remains.
 
-Local Windows/Unity 6000.6.9f1 acceptance observed Codex MCP client
-`0.169.0-alpha.11.1` using 2025-03-26 through direct tools, including discovery,
-read, create/readback/delete, deferred work and reload reconnection. The official
-TypeScript `@modelcontextprotocol/client@2.4.0` passed those workflows plus
-subscriptions and a fresh reconnect over 2026-07-28 with no session header.
-These are the tested clients; separate Claude Code/Cursor acceptance remains
-[#5](https://github.com/i1rr/unity-MCP/issues/5) and non-Windows validation
-[#6](https://github.com/i1rr/unity-MCP/issues/6).
+Codex `0.169.0-alpha.11.1` includes modern support behind a disabled-by-default
+feature flag. Merge this into the project's private `.codex/config.toml`:
 
-The TypeScript SDK's modern opt-in is explicit:
+```toml
+[features]
+mcp_2026_07_28 = true
+```
+
+Reconnect through a fresh Codex connection, then verify Dashboard stateless
+activity and `get_editor_state`. Existing connections do not change protocol
+when config is edited. This Codex build marks the flag under development.
+Check the actual client build and effective features; a product name alone
+does not establish modern support. Older requests get supported-version
+information and upgrade guidance, without session fallback.
+
+The official TypeScript SDK opt-in is explicit:
 
 ```typescript
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
@@ -81,13 +90,11 @@ const client = new Client({ name: 'my-client', version: '1.0' }, {
 await client.connect(new StreamableHTTPClientTransport(new URL(endpoint)));
 ```
 
-Provide bearer authentication through the transport's private `requestInit`
-headers when required. See the [SDK version-negotiation guide](https://github.com/modelcontextprotocol/typescript-sdk/blob/main/docs/migration/support-2026-07-28.md).
-Default legacy mode remains supported. Custom helpers must probe discovery before
-sending effects and allow legacy fallback only for a recognized legacy server
-response. Authentication, modern header/metadata errors and an interrupted
-mutation never justify downgrade or replay. Modern helper calls must not load,
-mint or retain a session ID; use fresh requests with explicit application handles.
+Provide bearer authentication through private transport request headers.
+See the [SDK version-negotiation guide](https://github.com/modelcontextprotocol/typescript-sdk/blob/main/docs/migration/support-2026-07-28.md).
+Helpers must not load, mint or retain protocol session IDs. Authentication,
+metadata errors and interrupted mutations never justify downgrade or replay.
+Keep explicit application handles for tests, imports, UI actions and recordings.
 
 ## Claude Code
 
@@ -103,8 +110,9 @@ Claude Code's private MCP configuration. Do not paste a real token into a shared
 issue, committed configuration or example. The default local scope avoids
 publishing this machine's endpoint in the project. Consult the current
 [Claude Code MCP documentation](https://code.claude.com/docs/en/mcp) for header
-helpers, scopes and server status. These setup instructions do not claim a
-new end-to-end Claude Code compatibility test.
+helpers, scopes and server status. Registration alone does not enable a protocol version. Modern Claude Code
+compatibility with this stateless-only working tree has not been verified;
+confirm the actual client protocol before adopting it.
 
 ## Cursor
 
@@ -123,8 +131,8 @@ private project `.cursor/mcp.json` without replacing other servers:
 
 If authentication is enabled, add the bearer header using Cursor's supported
 private configuration. Keep tokens and local endpoints out of source control.
-See [Cursor MCP documentation](https://cursor.com/docs/mcp). This example is
-documentation-based; it is not a new end-to-end Cursor validation result.
+See [Cursor MCP documentation](https://cursor.com/docs/mcp). Registration alone does not establish modern-protocol compatibility; verify
+the actual Cursor build against the required stateless protocol.
 
 ## Confirm the first result
 

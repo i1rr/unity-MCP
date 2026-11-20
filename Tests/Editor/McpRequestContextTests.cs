@@ -1,7 +1,6 @@
 using System;
 using System.Threading;
 using I1rr.UnityMcp.Shared;
-using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using NUnit.Framework;
 
@@ -9,138 +8,78 @@ namespace I1rr.UnityMcp.Editor.Tests
 {
     public class McpRequestContextTests
     {
-        private Func<JObject, string, JToken> _previousCall;
+        private Func<JObject, McpRequestContext, JToken> _previousCall;
+        [SetUp] public void Before() => _previousCall = McpProtocol.OnToolsCall;
+        [TearDown] public void After() => McpProtocol.OnToolsCall = _previousCall;
 
-        [SetUp] public void SetUp()
-        {
-            _previousCall = McpProtocol.OnToolsCall;
-            McpProtocol.Reset();
+        private static JObject Call() {
+            var request = McpModernProtocolTests.Request("tools/call");
+            request["params"]["name"] = "probe";
+            request["params"]["_meta"][McpProtocol.ClientInfoMetaKey] = new JObject { ["name"] = "client", ["version"] = "1" };
+            return request;
         }
 
-        [TearDown] public void TearDown()
+        [Test] public void CallbackReceivesCapturedPerRequestContext()
         {
-            McpProtocol.OnToolsCall = _previousCall;
-            McpProtocol.Reset();
-        }
-
-        private static JObject Call(string id = "probe") => new JObject
-        {
-            ["jsonrpc"] = "2.0", ["id"] = id, ["method"] = "tools/call",
-            ["params"] = new JObject { ["name"] = "probe", ["arguments"] = new JObject() }
-        };
-
-        private static string Initialize(string version, JObject capabilities = null)
-        {
-            var init = new JObject
-            {
-                ["jsonrpc"] = "2.0", ["id"] = 1, ["method"] = "initialize",
-                ["params"] = new JObject
-                {
-                    ["protocolVersion"] = version, ["capabilities"] = capabilities ?? new JObject(),
-                    ["clientInfo"] = new JObject { ["name"] = "untrusted-label", ["version"] = "1" }
-                }
-            };
-            McpProtocol.ProcessRequest(init, null, out var session,
-                new McpClientTransportInfo { UserAgent = "original-agent", RemoteAddress = "127.0.0.1" });
-            McpProtocol.ProcessRequest(new JObject
-                { ["jsonrpc"] = "2.0", ["method"] = "notifications/initialized" }, session, out _);
-            return session;
-        }
-
-        [TestCase("2025-03-26")]
-        [TestCase("2025-11-25")]
-        public void LegacyWireEnvelopeAndCallbackSessionRemainCompatible(string version)
-        {
-            var session = Initialize(version);
-            int calls = 0;
-            McpProtocol.OnToolsCall = (_, actualSession) =>
-            {
-                Assert.That(actualSession, Is.EqualTo(session));
-                calls++;
+            var request = Call();
+            var context = McpProtocol.CreateModernRequestContext(request);
+            McpProtocol.OnToolsCall = (_, actual) => {
+                Assert.That(actual, Is.SameAs(context));
                 return new JObject { ["ok"] = true };
             };
-            var response = McpProtocol.ProcessRequest(Call(), session, out var newSession);
-            var wire = JObject.Parse(response.ToString(Formatting.None));
-            Assert.That(calls, Is.EqualTo(1));
-            Assert.That(newSession, Is.Null);
-            Assert.That((string)wire["jsonrpc"], Is.EqualTo("2.0"));
-            Assert.That((string)wire["id"], Is.EqualTo("probe"));
-            Assert.That((string)wire["result"]["content"][0]["text"], Is.EqualTo("{\"ok\":true}"));
-            Assert.That(wire["result"]["resultType"], Is.Null, "Legacy envelopes must not change.");
-            Assert.That(wire["result"]["_meta"], Is.Null);
+            var response = McpProtocol.ProcessRequestWithContext(request, context);
+            Assert.That((string)response["result"]["resultType"], Is.EqualTo("complete"));
+            Assert.That((string)response["result"]["content"][0]["text"], Is.EqualTo("{\"ok\":true}"));
         }
 
-        [Test]
-        public void CapturedMetadataCannotBeRewrittenBySessionsOrReturnedJson()
+        [Test] public void DeferredMetadataCannotBeRewrittenByOtherRequestsOrReturnedJson()
         {
-            var caps = new JObject { ["roots"] = new JObject { ["listChanged"] = true } };
-            var session = Initialize(McpProtocol.ProtocolVersionNext, caps);
             var request = Call();
-            var context = McpProtocol.CreateLegacyRequestContext(request, session);
-            var deferred = new DeferredResult { SessionId = session, RequestContext = context };
-            caps["roots"]["listChanged"] = false;
-            context.ClientCapabilities["roots"]["listChanged"] = false;
+            request["params"]["_meta"][McpProtocol.CapabilitiesMetaKey] = new JObject { ["roots"] = true };
+            var context = McpProtocol.CreateModernRequestContext(request,
+                new McpClientTransportInfo { UserAgent = "original-agent", RemoteAddress = "127.0.0.1" });
+            var deferred = new DeferredResult { RequestContext = context };
+            context.ClientCapabilities["roots"] = false;
             context.ClientInfo["name"] = "changed";
             ((JValue)context.RequestId).Value = "changed";
             context.TransportInfo.UserAgent = "changed";
-            McpProtocol.Reset();
-            McpProtocol.RestoreSession("other", McpProtocol.ProtocolVersionBaseline);
-            Assert.That(deferred.RequestContext.ProtocolVersion, Is.EqualTo("2025-11-25"));
-            Assert.That(deferred.RequestContext.LegacySessionId, Is.EqualTo(session));
-            Assert.That((bool)context.ClientCapabilities["roots"]["listChanged"], Is.True);
-            Assert.That((string)context.ClientInfo["name"], Is.EqualTo("untrusted-label"));
-            Assert.That((string)context.RequestId, Is.EqualTo("probe"));
+            request["params"]["_meta"][McpProtocol.ClientInfoMetaKey]["name"] = "other";
+            McpProtocol.CreateModernRequestContext(request);
+            Assert.That((bool)deferred.RequestContext.ClientCapabilities["roots"], Is.True);
+            Assert.That((string)context.ClientInfo["name"], Is.EqualTo("client"));
+            Assert.That((int)context.RequestId, Is.EqualTo(1));
             Assert.That(context.TransportInfo.UserAgent, Is.EqualTo("original-agent"));
-            Assert.That(context.AuthenticatedPrincipal, Is.Null, "A client name is not authority.");
+            Assert.That(context.AuthenticatedPrincipal, Is.Null);
         }
 
-        [Test]
-        public void NegotiatedCapabilitiesSurviveLegacyReloadSerialization()
+        [Test] public void MissingMetadataIsRejectedBeforeToolSideEffects()
         {
-            var session = Initialize(McpProtocol.ProtocolVersionNext,
-                new JObject { ["sampling"] = new JObject() });
-            var saved = JObject.Parse(McpProtocol.SerializeSession(McpProtocol.GetSession(session)).ToString());
-            McpProtocol.Reset();
-            McpProtocol.RestoreSession(saved);
-            var context = McpProtocol.CreateLegacyRequestContext(Call(), session);
-            Assert.That(context.ClientCapabilities["sampling"], Is.TypeOf<JObject>());
-            Assert.That(context.IsInitialized, Is.True);
-            Assert.That(context.ProtocolVersion, Is.EqualTo("2025-11-25"));
-        }
-
-        [TestCase("2025-03-26")]
-        [TestCase("2025-11-25")]
-        public void SharedAdmissionRejectsUninitializedCallsBeforeToolSideEffects(string version)
-        {
-            McpProtocol.RestoreSession("pending", version, false);
+            var request = Call();
+            ((JObject)request["params"]).Remove("_meta");
             int calls = 0;
             McpProtocol.OnToolsCall = (_, __) => { calls++; return new JObject(); };
-            var request = Call();
-            var context = McpProtocol.CreateLegacyRequestContext(request, "pending");
-            Assert.That((int)McpProtocol.ValidateRequestForDispatch(request, context)["error"]["code"],
-                Is.EqualTo(McpProtocol.ErrorServerNotInitialized));
-            var response = McpProtocol.ProcessRequestWithContext(request, context, out _);
-            Assert.That((string)response["error"]["message"], Is.EqualTo("Server not initialized"));
+            var response = McpProtocol.ProcessRequestWithContext(request, McpProtocol.CreateModernRequestContext(request));
+            Assert.That((int)response["error"]["code"], Is.EqualTo(McpProtocol.ErrorInvalidParams));
             Assert.That(calls, Is.Zero);
         }
 
-        [Test]
-        public void ContextCannotBeReusedForAnotherRequestAndCancellationRemainsLive()
+        [Test] public void ContextCannotBeReusedAndCancellationRemainsLive()
         {
-            var session = Initialize(McpProtocol.ProtocolVersionBaseline);
-            using var cancellation = new CancellationTokenSource();
             var request = Call();
-            var context = McpProtocol.CreateLegacyRequestContext(request, session,
+            using var cancellation = new CancellationTokenSource();
+            var context = McpProtocol.CreateModernRequestContext(request,
                 authenticatedPrincipal: "host-established", cancellation: cancellation.Token);
+            request["id"] = "other";
             int calls = 0;
             McpProtocol.OnToolsCall = (_, __) => { calls++; return new JObject(); };
-            var other = Call("other");
-            var response = McpProtocol.ProcessRequestWithContext(other, context, out _);
+            var response = McpProtocol.ProcessRequestWithContext(request, context);
             Assert.That((int)response["error"]["code"], Is.EqualTo(McpProtocol.ErrorInvalidRequest));
             Assert.That(calls, Is.Zero);
+            var replaced = context.WithCancellation(cancellation.Token);
             cancellation.Cancel();
-            Assert.That(context.Cancellation.IsCancellationRequested, Is.True);
-            Assert.That(context.AuthenticatedPrincipal, Is.EqualTo("host-established"));
+            Assert.That(replaced.OperationId, Is.EqualTo(context.OperationId));
+            Assert.That(replaced.Cancellation.IsCancellationRequested, Is.True);
+            Assert.That(replaced.AuthenticatedPrincipal, Is.EqualTo("host-established"));
         }
     }
 }

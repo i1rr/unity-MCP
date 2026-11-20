@@ -77,49 +77,6 @@ namespace I1rr.UnityMcp.Editor.Tests
             }
         }
 
-        [TestCase("{'jsonrpc':'2.0','method':'ping','id':1}", false, 1)]
-        [TestCase("[{'jsonrpc':'2.0','method':'ping','id':1}]", true, 1)]
-        [TestCase("[{'jsonrpc':'2.0','method':'ping','id':1},{'jsonrpc':'2.0','method':'ping'}]", true, 2)]
-        public void ParserPreservesWireShape(string json, bool batch, int count)
-        {
-            var (requests, error) = McpProtocol.ParseRequest(json, null, out bool isBatch);
-            Assert.That(error, Is.Null);
-            Assert.That(isBatch, Is.EqualTo(batch));
-            Assert.That(requests.Count, Is.EqualTo(count));
-        }
-
-        [TestCase("[{'jsonrpc':'2.0','method':'ping','id':1}]", 1)]
-        [TestCase("[{'jsonrpc':'2.0','method':'ping','id':1},{'jsonrpc':'2.0','method':'ping'}]", 1)]
-        [TestCase("[{'jsonrpc':'2.0','method':'ping','id':1},{'jsonrpc':'2.0','method':'ping','id':2}]", 2)]
-        [TestCase("[{'jsonrpc':'2.0','method':'ping'}]", 0)]
-        public void BaselineHttpBatchPreservesArrayOrReturnsAccepted(string json, int replies)
-        {
-            var previous = McpEditorServer._outboundQueue;
-            using var queue = new BlockingCollection<McpEditorServer.CompletedRequest>();
-            string session = Guid.NewGuid().ToString("N");
-            McpProtocol.RestoreSession(session, McpProtocol.ProtocolVersionBaseline);
-            try
-            {
-                McpEditorServer._outboundQueue = queue;
-                var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
-                    ["Host"] = "127.0.0.1:" + McpEditorServer.Port, ["Content-Type"] = "application/json",
-                    ["MCP-Session-Id"] = session, ["Authorization"] = "Bearer " + McpEditorServer._authToken
-                };
-                EditorRequestPipeline.ProcessRequest(new McpEditorServer.McpRequest { ClientId = -1,
-                    HttpRequest = new TcpHttpHandler.HttpRequest { Method = "POST", Path = "/mcp",
-                        Headers = headers, Body = Encoding.UTF8.GetBytes(json.Replace('\'','"')) } });
-                Assert.That(queue.TryTake(out var response), Is.True);
-                Assert.That(response.StatusCode, Is.EqualTo(replies == 0 ? 202 : 200));
-                if (replies == 0) Assert.That(response.ResponseBytes, Is.Null);
-                else Assert.That(JArray.Parse(Encoding.UTF8.GetString(response.ResponseBytes)).Count, Is.EqualTo(replies));
-            }
-            finally
-            {
-                McpEditorServer._outboundQueue = previous;
-                McpProtocol.TerminateSession(session);
-            }
-        }
-
         [UnityTest]
         public IEnumerator PrefabMaterialDependencyIsFoundInBothDirections()
         {

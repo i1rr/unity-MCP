@@ -20,7 +20,7 @@ namespace I1rr.UnityMcp.Runtime
         private const int BroadcastPort = 8199;
         private const float DefaultInterval = 5f;
         private const string ServiceName = "i1rr-unity-mcp";
-        private const string ProtocolVersion = "2025-03-26";
+        private const string ProtocolVersion = Shared.McpProtocol.ProtocolVersionModern;
 
         /// <summary>
         /// Rate limit: max 1 response per source IP per 10 seconds.
